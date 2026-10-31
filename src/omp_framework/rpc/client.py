@@ -102,10 +102,16 @@ class HostToolCall:
     arguments: Mapping[str, Any]
     seq: int
     cancel_event: threading.Event = field(default_factory=threading.Event, compare=False, repr=False)
+    on_progress: Callable[[str], None] | None = field(default=None, compare=False, repr=False)
 
     @property
     def cancelled(self) -> bool:
         return self.cancel_event.is_set()
+
+    def report_progress(self, text: str) -> None:
+        """Send a streaming `host_tool_update` partialResult frame back to omp while the tool is running."""
+        if not self.cancelled and self.on_progress is not None:
+            self.on_progress(text)
 
 
 @dataclass(frozen=True, slots=True)
@@ -662,6 +668,19 @@ class RpcClient:
             elapsed_s=time.monotonic() - started,
         )
 
+    def send_tool_update(self, call_id: str, text: str) -> bool:
+        """Send an inbound `host_tool_update` streaming progress frame to omp (`docs/rpc.md`)."""
+        frame = {
+            "type": "host_tool_update",
+            "id": call_id,
+            "partialResult": {"content": [{"type": "text", "text": text}]},
+        }
+        try:
+            self._write(_encode(frame), "host_tool_update")
+            return True
+        except RpcError:
+            return False
+
     def _on_host_tool_call(self, frame: Mapping[str, Any]) -> None:
         request_id = frame.get("id")
         tool_name = frame.get("toolName")
@@ -676,6 +695,7 @@ class RpcClient:
             tool_name=tool_name,
             arguments=arguments if isinstance(arguments, dict) else {},
             seq=self._tool_count,
+            on_progress=lambda text, cid=request_id: self.send_tool_update(cid, text),
         )
         limit = self.max_tool_calls
         if limit is not None and self._tool_count > limit:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,9 +32,18 @@ __all__ = [
     "OnboardingStepView",
     "OnboardingWorkflow",
     "REQUIREMENT_QUESTIONS",
+    "ScaffoldResult",
 ]
 
 StepStatus = Literal["locked", "current", "completed"]
+
+
+class ScaffoldResult(ContractModel):
+    project_name: str
+    package_slug: str
+    output_dir: str
+    generated_files: list[str]
+    env_command: str
 
 
 class DomainRequirementSpec(ContractModel):
@@ -196,6 +206,118 @@ class OnboardingWorkflow:
         md_path.write_text("\n".join(md_lines), encoding="utf-8")
         self._requirements = spec
         return self.verify_step("step-1-requirements")
+
+    def scaffold_from_requirements(self, target_root: Path | None = None) -> ScaffoldResult:
+        """Auto-generate a ready-to-run Domain Pack and Agent Markdown files from Step 1 `DomainRequirementSpec`."""
+        req = self._requirements
+        if req is None and self.requirements_file.is_file():
+            req = DomainRequirementSpec.model_validate(
+                json.loads(self.requirements_file.read_text(encoding="utf-8"))
+            )
+            self._requirements = req
+        if req is None:
+            raise ValueError("Complete Step 1 (Requirement Discovery Interview) before running scaffold.")
+
+        slug = re.sub(r"[^a-z0-9_]+", "_", req.project_name.lower()).strip("_") or "custom_domain"
+        base_dir = target_root if target_root is not None else (self.state_file.parent / "scaffolded" / slug)
+        pkg_dir = base_dir / "src" / slug
+        agents_dir = base_dir / "agents" / "omp"
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        agents_dir.mkdir(parents=True, exist_ok=True)
+
+        generated: list[str] = []
+
+        # 1. Generate __init__.py
+        init_file = pkg_dir / "__init__.py"
+        init_file.write_text(
+            f'"""Auto-scaffolded domain pack for {req.project_name} ({req.domain_purpose})."""\n\n'
+            f"from {slug}.pack import build_pack\n\n__all__ = ['build_pack']\n",
+            encoding="utf-8",
+        )
+        generated.append(str(init_file))
+
+        # 2. Generate pack.py with user's scopes, metrics, and tools
+        scopes_dict = {
+            sid: {
+                "scope_id": sid,
+                "name": f"{req.project_name} — {req.scope_entity_name} {sid}",
+                "as_of": datetime.now(UTC).strftime("%Y-%m-%d"),
+                "overall_grade": 1,
+                "overall_status": "healthy_green",
+                "availability_sla": 0.999,
+                "metrics": {m: 0.75 for m in req.key_metrics},
+                "nodes": [{"node_id": f"{sid}-node-01", "load_ratio": 0.75, "light": "green", "link_status": "ok", "sensor_trust": "trusted"}],
+                "recent_anomalies": [
+                    {"event_id": f"EVT-{sid.upper()}-01", "node_id": f"{sid}-node-01", "kind": req.event_triggers[0] if req.event_triggers else "anomaly", "detail": f"Sample {req.domain_purpose} event"}
+                ],
+                "historical_ratios": [0.5, 0.6, 0.65, 0.7, 0.75],
+            }
+            for sid in req.sample_scope_ids
+        }
+
+        pack_code = f'''"""Auto-generated Domain Pack for {req.project_name}."""
+
+from __future__ import annotations
+from typing import Any
+from omp_framework.control.gate import PolicyGate
+from omp_framework.control.store import GovernanceStore
+from omp_framework.llm.backend import OfflinePlanner
+from omp_framework.memory.store import ExpertMemoryStore
+from omp_framework.tools.registry import ToolRegistry
+from starter_domain.pack import StarterDomainPack, build_starter_pack
+
+CUSTOM_SCOPES: dict[str, dict[str, Any]] = {repr(scopes_dict)}
+
+
+def build_pack(
+    *,
+    registry: ToolRegistry,
+    gate: PolicyGate,
+    store: GovernanceStore,
+    memory: ExpertMemoryStore | None = None,
+    planner: OfflinePlanner | None = None,
+) -> StarterDomainPack:
+    pack = build_starter_pack(registry=registry, gate=gate, store=store, memory=memory, planner=planner)
+    pack.name = {req.project_name!r}
+    pack.scopes = {{k: dict(v) for k, v in CUSTOM_SCOPES.items()}}
+    return pack
+'''
+        pack_file = pkg_dir / "pack.py"
+        pack_file.write_text(pack_code, encoding="utf-8")
+        generated.append(str(pack_file))
+
+        # 3. Generate agents/omp/<archetype>.md profiles
+        for arch in req.selected_archetypes:
+            tools_list = list(req.read_only_tools)
+            if arch != "query":
+                tools_list.extend(t for t in req.mutating_proposals if t not in tools_list)
+            tools_yaml = "\n".join(f"  - {t}" for t in tools_list)
+            md_content = (
+                f"omp-agent: {arch}\n"
+                f"label: {req.project_name} ({arch.upper()})\n"
+                f"domain: {req.scope_entity_name}\n"
+                f"description: {req.domain_purpose} ({arch} archetype)\n"
+                f"tools:\n{tools_yaml}\n"
+                f"max_tool_calls: 12\n"
+                f"timeout_s: 120\n"
+                f"---\n"
+                f"You are the **{req.project_name} `{arch}` Agent**.\n\n"
+                f"- Purpose: {req.domain_purpose}\n"
+                f"- Scope Entity: `{req.scope_entity_name}`\n"
+                f"- Monitored Metrics: {', '.join(f'`{m}`' for m in req.key_metrics)}\n"
+                f"- Human Approver Roles: {', '.join(f'`{r}`' for r in req.human_approver_roles)}\n"
+            )
+            md_file = agents_dir / f"{arch}.md"
+            md_file.write_text(md_content, encoding="utf-8")
+            generated.append(str(md_file))
+
+        return ScaffoldResult(
+            project_name=req.project_name,
+            package_slug=slug,
+            output_dir=str(base_dir),
+            generated_files=generated,
+            env_command=f"$env:OMP_DOMAIN_PACK = '{slug}.pack:build_pack'",
+        )
 
     def reset(self) -> OnboardingStateView:
         self._completed.clear()

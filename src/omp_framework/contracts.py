@@ -340,6 +340,8 @@ class AgentRunAnswer(ContractModel):
     mode: str
     status: Literal["ok", "aborted", "refused", "error"]
     answer: str
+    session_id: str | None = None
+    session_file: str | None = None
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     abort_reason: str | None = None

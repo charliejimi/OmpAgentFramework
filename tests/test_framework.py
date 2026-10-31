@@ -286,6 +286,15 @@ def test_gated_onboarding_workflow_step_by_step(tmp_path: Path) -> None:
     assert req_body["state"]["requirements"]["project_name"] == "GridSentinel"
     assert (paths.home.parent / "DOMAIN_BLUEPRINT_SPEC.md").is_file()
 
+    # Auto-scaffold generates domain pack and agent .md files from Step 1 requirements
+    scaf_res = client.post("/api/v1/onboarding/scaffold")
+    assert scaf_res.status_code == 200
+    scaf_data = scaf_res.json()["data"]
+    assert scaf_data["package_slug"] == "gridsentinel"
+    assert len(scaf_data["generated_files"]) >= 5
+    for fpath in scaf_data["generated_files"]:
+        assert Path(fpath).is_file()
+
     # Sequentially verify remaining Steps 2 through 8; each step unlocks the next step
     for idx, step in enumerate(init_state["steps"][1:], start=2):
         v_res = client.post(f"/api/v1/onboarding/steps/{step['step_id']}/verify")
@@ -304,4 +313,42 @@ def test_gated_onboarding_workflow_step_by_step(tmp_path: Path) -> None:
     assert reset_state["completed_count"] == 0
     assert reset_state["current_step_number"] == 1
     assert reset_state["requirements"] is None
+
+
+def test_tool_progress_streaming_and_session_resume(tmp_path: Path) -> None:
+    paths = OmpPaths.under(tmp_path / "var")
+    app = create_app(port=8796, omp_command=FAKE_OMP_CMD, omp_paths=paths)
+    client = TestClient(app)
+
+    # First turn creates a session file and streams host_tool_update progress
+    r1 = client.post("/api/v1/agents/query/ask", json={"prompt": "Turn 1", "scope_id": "prod-cluster-01"})
+    assert r1.status_code == 200
+    d1 = r1.json()["data"]
+    session_file = d1["session_file"]
+    session_id = d1["session_id"]
+    assert session_file is not None and Path(session_file).is_file()
+
+    # Second turn resumes the exact same session via resume_session
+    r2 = client.post(
+        "/api/v1/agents/query/ask",
+        json={"prompt": "Turn 2 follow-up", "scope_id": "prod-cluster-01", "resume_session": session_file},
+    )
+    assert r2.status_code == 200
+    d2 = r2.json()["data"]
+    assert d2["session_id"] == session_id
+    assert d2["session_file"] == session_file
+
+    # Verify ToolSession recorded progress updates when get_system_metrics called inv.report_progress(...)
+    sess = app.state.registry.session(
+        agent_id="query",
+        agent_domain="monitoring",
+        allowed_tools=["get_system_metrics"],
+        scope=ScopeContext(scope_id="prod-cluster-01"),
+        gate=app.state.gate,
+    )
+    streamed: list[str] = []
+    sess.call("get_system_metrics", {}, on_progress=streamed.append)
+    assert len(streamed) == 1
+    assert "Reading telemetry & SLA" in streamed[0]
+
 

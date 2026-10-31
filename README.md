@@ -79,6 +79,9 @@ The framework includes an interactive **8-Step Gated Onboarding & Requirement Di
    # (Generates var/domain_requirements.json & var/DOMAIN_BLUEPRINT_SPEC.md and unlocks Step 2)
    .venv\Scripts\python -m omp_framework.onboarding interview
 
+   # Optional: Auto-generate a ready-to-run custom Domain Pack & agents/omp/*.md from Step 1 answers!
+   .venv\Scripts\python -m omp_framework.onboarding scaffold
+
    # Check current active step, files to edit, and instructions
    .venv\Scripts\python -m omp_framework.onboarding status
 

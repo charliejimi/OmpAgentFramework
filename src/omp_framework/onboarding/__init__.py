@@ -7,6 +7,7 @@ from omp_framework.onboarding.engine import (
     OnboardingStateView,
     OnboardingStepView,
     OnboardingWorkflow,
+    ScaffoldResult,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "OnboardingStateView",
     "OnboardingStepView",
     "OnboardingWorkflow",
+    "ScaffoldResult",
 ]

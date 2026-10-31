@@ -1,0 +1,60 @@
+name: CI — Pytest & 8-Step Onboarding Gate
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync dependencies
+        run: uv sync --extra api
+
+      - name: Run pytest suite
+        env:
+          PYTHONPATH: src
+        run: uv run pytest -q
+
+      - name: Run Step 1 Interview + 8-Step Gated Verification (with fake_omp)
+        env:
+          PYTHONPATH: src
+        run: |
+          uv run python -c "
+          import sys
+          from pathlib import Path
+          from omp_framework.api.app import create_app
+          from omp_framework.onboarding.engine import DomainRequirementSpec
+          from omp_framework.rpc.process import OmpPaths
+
+          app = create_app(omp_command=(sys.executable, str(Path('tests/fake_omp.py').resolve())), omp_paths=OmpPaths.under('var/ci'))
+          wf = app.state.onboarding
+          spec = DomainRequirementSpec(
+              project_name='CISentinel',
+              domain_purpose='CI verification of governed agent framework',
+              scope_entity_name='cluster',
+              sample_scope_ids=['prod-cluster-01'],
+              key_metrics=['cpu_load_ratio', 'p99_latency_ms', 'availability_sla'],
+              selected_archetypes=['query', 'report', 'rulecard', 'ops'],
+              read_only_tools=['get_system_metrics', 'list_recent_anomalies'],
+              mutating_proposals=['submit_report_draft', 'propose_rule_draft', 'create_ticket', 'propose_intent'],
+              human_approver_roles=['ops_lead', 'domain_expert'],
+              event_triggers=['link_packet_loss'],
+              llm_mode_preference='offline',
+          )
+          wf.save_requirements(spec)
+          for s in wf.get_state().steps:
+              r = wf.verify_step(s.step_id)
+              assert r.passed, f'Step {s.step_id} failed: {r.summary}'
+          print('All 8 onboarding steps passed in CI!')
+          "

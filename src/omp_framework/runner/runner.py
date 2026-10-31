@@ -214,6 +214,7 @@ class AgentRunner:
         prompt: str,
         *,
         scope: ScopeContext | None = None,
+        resume_session: Path | str | None = None,
     ) -> AgentRunAnswer:
         self.validate_prompt(prompt)
         profile = self.profiles.get(agent_id)
@@ -239,6 +240,7 @@ class AgentRunner:
         model_name = os.environ.get("OMP_MODEL", "").strip() or "omp/omp-offline"
         agent_sessions_dir = self.paths.sessions / profile.agent_id if self.paths.sessions else None
         run_paths = replace(self.paths, sessions=agent_sessions_dir)
+        resume_path = Path(resume_session) if resume_session is not None else None
 
         launch = OmpLaunch(
             paths=run_paths,
@@ -246,6 +248,7 @@ class AgentRunner:
             model=model_name,
             system_prompt=prompt_file,
             config=overlay_file if overlay_file.is_file() else None,
+            resume_session=resume_path,
         )
         limits = RunLimits(
             max_tool_calls=profile.max_tool_calls,
@@ -278,6 +281,8 @@ class AgentRunner:
             mode=self.current_mode,
             status=status_val,
             answer=answer_text,
+            session_id=rpc_res.session_id,
+            session_file=rpc_res.session_file,
             tool_calls=list(tool_session.records),
             citations=list(tool_session.citations),
             abort_reason=rpc_res.reason,

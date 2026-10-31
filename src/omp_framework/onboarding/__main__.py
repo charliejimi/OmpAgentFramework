@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="Show current step, progress, and instructions")
     int_parser = sub.add_parser("interview", help="Interactive Step 1 Requirement Discovery Questionnaire")
     int_parser.add_argument("--defaults", action="store_true", help="Accept default starter requirements non-interactively")
+    sub.add_parser("scaffold", help="Auto-generate Domain Pack and Agent Markdown files from Step 1 requirements")
     v_parser = sub.add_parser("verify", help="Verify current step (or specified step_id) and unlock the next step")
     v_parser.add_argument("step_id", nargs="?", default=None, help="Optional step_id to verify")
     sub.add_parser("verify-all", help="Capture default requirements (if not set) and sequentially verify all 8 steps")
@@ -68,6 +69,18 @@ def main(argv: list[str] | None = None) -> int:
         print("Generated: var/domain_requirements.json and var/DOMAIN_BLUEPRINT_SPEC.md")
         if res.unlocked_next_step:
             print(f"[UNLOCKED] Next Step: {res.unlocked_next_step}")
+        return 0
+
+    if args.cmd == "scaffold":
+        try:
+            scaf = wf.scaffold_from_requirements()
+        except ValueError as exc:
+            print(f"[FAIL] {exc}")
+            return 1
+        print(f"[SCAFFOLDED] Project `{scaf.project_name}` ({scaf.package_slug}) -> {scaf.output_dir}")
+        for fpath in scaf.generated_files:
+            print(f"  + {fpath}")
+        print(f"Activate with: {scaf.env_command}")
         return 0
 
     if args.cmd == "verify-all":

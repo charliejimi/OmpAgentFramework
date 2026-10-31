@@ -271,6 +271,7 @@ class StarterDomainPack:
             args_model=NoArgs,
         )
         def get_system_metrics(inv: ToolInvocation) -> ToolOutput:
+            inv.report_progress(f"Reading telemetry & SLA for scope {inv.scope.scope_id}...")
             d = self.get_scope_data(inv.scope.scope_id)
             return ToolOutput(
                 data={

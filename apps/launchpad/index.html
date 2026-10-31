@@ -326,7 +326,8 @@
                 </select>
               </div>
             </div>
-            <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:10px;">
+            <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;">
+              <button class="secondary" onclick="scaffoldFromRequirements()">⚡ Auto-Generate Domain Pack &amp; Agent Files</button>
               <button class="success" onclick="submitRequirements()">💾 Save Requirements &amp; Complete Step 1</button>
             </div>
           </div>
@@ -715,6 +716,24 @@
       const r = body.data.result;
       fb.innerHTML = `<strong>✅ Step 1 Requirements Saved!</strong> ${r.summary} — <strong>Unlocked <code>${r.unlocked_next_step}</code>!</strong>`;
       await reloadDashboard();
+    }
+
+    async function scaffoldFromRequirements() {
+      await submitRequirements();
+      const fb = document.getElementById('wizard-feedback');
+      fb.style.display = 'block';
+      fb.innerHTML = '⏳ Auto-generating custom Domain Pack (`pack.py`) and `agents/omp/*.md` files...';
+      const res = await fetch('/api/v1/onboarding/scaffold', { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) {
+        fb.innerHTML = `❌ Scaffold failed: ${body.error || JSON.stringify(body)}`;
+        return;
+      }
+      const s = body.data;
+      fb.innerHTML = `<strong>⚡ Auto-Scaffold Complete for <code>${s.project_name}</code>!</strong><br/>` +
+        `Output Directory: <code>${s.output_dir}</code><br/>` +
+        `Activate with: <code>${s.env_command}</code><br/>` +
+        `<div style="margin-top:4px;font-size:0.76rem;color:var(--muted);">Files: ${s.generated_files.map(f => `<code>${f}</code>`).join(', ')}</div>`;
     }
 
     async function verifyStep(stepId) {

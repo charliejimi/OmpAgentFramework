@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -38,7 +39,42 @@ from omp_framework.tools.registry import ToolRegistry
 from omp_framework.triggers.bus import EventTriggerBus
 from starter_domain.pack import DEFAULT_EXPERT_CRITERIA, build_starter_pack
 
-__all__ = ["create_app"]
+__all__ = ["DOMAIN_PACK_ENV", "create_app", "load_domain_pack"]
+
+DOMAIN_PACK_ENV: Final = "OMP_DOMAIN_PACK"
+
+
+def load_domain_pack(
+    *,
+    registry: ToolRegistry,
+    gate: PolicyGate,
+    store: GovernanceStore,
+    memory: ExpertMemoryStore,
+    planner: OfflinePlanner,
+    pack_spec: str | None = None,
+) -> Any:
+    """Load a pluggable Domain Pack from `OMP_DOMAIN_PACK=<module>:<factory_fn>` or default `starter_domain.pack:build_starter_pack`."""
+    spec = (pack_spec or os.environ.get(DOMAIN_PACK_ENV, "")).strip()
+    if not spec:
+        return build_starter_pack(
+            registry=registry,
+            gate=gate,
+            store=store,
+            memory=memory,
+            planner=planner,
+        )
+    if ":" not in spec:
+        raise ValueError(f"{DOMAIN_PACK_ENV} must be '<module>:<factory_fn>', got {spec!r}")
+    mod_name, fn_name = spec.split(":", 1)
+    module = importlib.import_module(mod_name)
+    factory = getattr(module, fn_name)
+    return factory(
+        registry=registry,
+        gate=gate,
+        store=store,
+        memory=memory,
+        planner=planner,
+    )
 
 
 def _envelope(data: Any, *, scope_id: str = "default", mode: str = "offline") -> dict[str, Any]:
@@ -85,6 +121,7 @@ class AgentAskRequest(BaseModel):
     scope_id: str = Field(default="prod-cluster-01")
     as_of: str = Field(default="2026-10-31")
     read_only: bool = Field(default=False)
+    resume_session: str | None = Field(default=None, description="Optional session file path to resume multi-turn conversation")
 
 
 class IntentReviewRequest(BaseModel):
@@ -138,7 +175,7 @@ def create_app(
     memory = ExpertMemoryStore(list(DEFAULT_EXPERT_CRITERIA))
 
     planner = OfflinePlanner()
-    pack = build_starter_pack(
+    pack = load_domain_pack(
         registry=registry,
         gate=gate,
         store=store,
@@ -296,7 +333,13 @@ def create_app(
             as_of=req.as_of,
             read_only=req.read_only,
         )
-        ans = await run_in_threadpool(runner.run, agent_id, req.prompt, scope=scope_ctx)
+        ans = await run_in_threadpool(
+            runner.run,
+            agent_id,
+            req.prompt,
+            scope=scope_ctx,
+            resume_session=req.resume_session,
+        )
         return JSONResponse(_envelope(ans.model_dump(), scope_id=req.scope_id, mode=runner.current_mode))
 
     @app.get("/api/v1/intents")
@@ -443,6 +486,14 @@ def create_app(
                 mode=runner.current_mode,
             ),
         )
+
+    @app.post("/api/v1/onboarding/scaffold")
+    async def scaffold_onboarding_domain() -> Response:
+        try:
+            scaf = await run_in_threadpool(onboarding.scaffold_from_requirements)
+        except ValueError as exc:
+            return JSONResponse(status_code=409, content={"error": str(exc)})
+        return JSONResponse(_envelope(scaf.model_dump(), mode=runner.current_mode))
 
     @app.post("/api/v1/onboarding/steps/{step_id}/verify")
     async def verify_onboarding_step(step_id: str) -> Response:

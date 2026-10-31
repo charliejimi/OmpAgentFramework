@@ -164,6 +164,7 @@ def main() -> int:
     model = "omp/omp-offline"
     system_prompt_path: str | None = None
     session_dir: str | None = None
+    resume_path: str | None = None
     for idx, arg in enumerate(args):
         if arg == "--model" and idx + 1 < len(args):
             model = args[idx + 1]
@@ -171,6 +172,8 @@ def main() -> int:
             system_prompt_path = args[idx + 1]
         elif arg == "--session-dir" and idx + 1 < len(args):
             session_dir = args[idx + 1]
+        elif arg == "--resume" and idx + 1 < len(args):
+            resume_path = args[idx + 1]
 
     sys_prompt = ""
     agent_id = "query"
@@ -193,7 +196,15 @@ def main() -> int:
 
     declared_tools: list[str] = []
     last_text = ""
-    session_id = f"sess-{uuid.uuid4().hex[:8]}"
+    if resume_path and Path(resume_path).is_file():
+        session_file_path: Path | None = Path(resume_path)
+        session_id = session_file_path.stem
+    else:
+        session_id = f"sess-{uuid.uuid4().hex[:8]}"
+        session_file_path = (Path(session_dir) / f"{session_id}.jsonl") if session_dir else None
+        if session_file_path is not None:
+            session_file_path.parent.mkdir(parents=True, exist_ok=True)
+            session_file_path.write_text(json.dumps({"type": "session", "id": session_id}) + "\n", encoding="utf-8")
 
     while True:
         frame = _read_frame()
@@ -219,7 +230,7 @@ def main() -> int:
                     "success": True,
                     "data": {
                         "sessionId": session_id,
-                        "sessionFile": str(Path(session_dir) / f"{session_id}.jsonl") if session_dir else None,
+                        "sessionFile": str(session_file_path) if session_file_path else None,
                         "model": model,
                         "systemPrompt": sys_prompt,
                         "isSettled": True,

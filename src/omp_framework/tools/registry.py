@@ -138,6 +138,13 @@ class ToolInvocation:
     call_id: str
     decision: Decision
     session: ToolSession
+    on_progress: Callable[[str], None] | None = field(default=None, compare=False, repr=False)
+
+    def report_progress(self, message: str) -> None:
+        """Stream an intermediate `host_tool_update` message back to omp while the tool executes."""
+        self.session.progress_updates.append((self.tool.name, message))
+        if self.on_progress is not None:
+            self.on_progress(message)
 
 
 ToolHandler = Callable[[ToolInvocation], ToolOutput | dict[str, Any]]
@@ -262,6 +269,7 @@ class ToolSession:
         self.scope = scope
         self.gate = gate
         self.state: dict[str, Any] = {}
+        self.progress_updates: list[tuple[str, str]] = []
         self._records: list[ToolCallRecord] = []
         self._citations: list[Citation] = []
         self._seq = 0
@@ -278,7 +286,12 @@ class ToolSession:
         return self.registry.declarations_for(self.allowed_tools, read_only=self.scope.read_only)
 
     def handle_rpc_call(self, call: HostToolCall) -> HostToolResult:
-        resp = self.call(call.tool_name, call.arguments, call_id=call.tool_call_id or call.id)
+        resp = self.call(
+            call.tool_name,
+            call.arguments,
+            call_id=call.tool_call_id or call.id,
+            on_progress=call.report_progress,
+        )
         return resp.to_host_tool_result()
 
     def call(
@@ -287,6 +300,7 @@ class ToolSession:
         arguments: Mapping[str, Any] | None = None,
         *,
         call_id: str = "",
+        on_progress: Callable[[str], None] | None = None,
     ) -> ToolResponse:
         started = time.monotonic()
         self._seq += 1
@@ -395,6 +409,7 @@ class ToolSession:
             call_id=cid,
             decision=decision,
             session=self,
+            on_progress=on_progress,
         )
         try:
             raw_out = handler(invocation)

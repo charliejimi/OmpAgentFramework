@@ -287,6 +287,7 @@ class OmpLaunch:
     model: str = DEFAULT_MODEL
     system_prompt: Path | None = None
     config: Path | None = None
+    resume_session: Path | None = None
     extra_args: tuple[str, ...] = ()
     extra_env: Mapping[str, str] = field(default_factory=dict)
     extensions: tuple[Path, ...] = ()
@@ -300,7 +301,7 @@ class OmpLaunch:
             raise OmpConfigError("model cannot be empty")
         if self.thinking is not None and self.thinking not in THINKING_LEVELS:
             raise OmpConfigError(f"thinking must be one of {THINKING_LEVELS}, got {self.thinking!r}")
-        for label, path in (("system_prompt", self.system_prompt), ("config", self.config)):
+        for label, path in (("system_prompt", self.system_prompt), ("config", self.config), ("resume_session", self.resume_session)):
             if path is not None and not Path(path).is_file():
                 raise OmpConfigError(f"{label} file does not exist: {path}")
         for extension in self.extensions:
@@ -314,7 +315,9 @@ class OmpLaunch:
         args += ["--model", self.model]
         if self.thinking is not None:
             args += ["--thinking", self.thinking]
-        if self.paths.sessions is None:
+        if self.resume_session is not None:
+            args += ["--resume", os.path.abspath(self.resume_session)]
+        elif self.paths.sessions is None:
             args.append("--no-session")
         else:
             args += ["--session-dir", str(self.paths.sessions)]
