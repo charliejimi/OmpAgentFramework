@@ -242,34 +242,66 @@ def test_gated_onboarding_workflow_step_by_step(tmp_path: Path) -> None:
     app = create_app(port=8797, omp_command=FAKE_OMP_CMD, omp_paths=paths)
     client = TestClient(app)
 
-    # Initial state: Step 1 is current, Steps 2..7 are locked
+    # Initial state: Step 1 (Requirement Discovery) is current, Steps 2..8 are locked
     init_state = client.get("/api/v1/onboarding").json()["data"]
     assert init_state["current_step_number"] == 1
+    assert init_state["total_steps"] == 8
     assert init_state["completed_count"] == 0
+    assert init_state["requirements"] is None
+    assert len(init_state["requirement_questions"]) == 11
+    assert init_state["steps"][0]["step_id"] == "step-1-requirements"
     assert init_state["steps"][0]["status"] == "current"
     assert init_state["steps"][1]["status"] == "locked"
 
-    # Trying to jump ahead and verify Step 2 before Step 1 is completed returns HTTP 409 (locked)
-    skip_res = client.post("/api/v1/onboarding/steps/step-2-domain-scopes/verify")
+    # Trying to verify Step 1 before submitting requirements returns HTTP 409
+    unanswered_res = client.post("/api/v1/onboarding/steps/step-1-requirements/verify")
+    assert unanswered_res.status_code == 409
+    assert unanswered_res.json()["data"]["result"]["passed"] is False
+
+    # Trying to jump ahead to Step 2 before Step 1 is completed returns HTTP 409 (locked)
+    skip_res = client.post("/api/v1/onboarding/steps/step-2-environment/verify")
     assert skip_res.status_code == 409
-    assert skip_res.json()["data"]["result"]["passed"] is False
     assert "locked until Step 1" in skip_res.json()["data"]["result"]["summary"]
 
-    # Sequentially verify Steps 1 through 7; each step unlocks the next step
-    for idx, step in enumerate(init_state["steps"], start=1):
+    # Submit Step 1 Requirement Discovery Questionnaire -> completes Step 1 & unlocks Step 2
+    req_payload = {
+        "project_name": "GridSentinel",
+        "domain_purpose": "Substation transformer monitoring and fault triage",
+        "scope_entity_name": "substation",
+        "sample_scope_ids": ["sub-north-01", "sub-south-02"],
+        "key_metrics": ["transformer_temp_c", "load_mva", "availability_sla"],
+        "selected_archetypes": ["query", "report", "rulecard", "ops"],
+        "read_only_tools": ["get_system_metrics", "list_recent_anomalies"],
+        "mutating_proposals": ["submit_report_draft", "propose_rule_draft", "create_ticket", "propose_intent"],
+        "human_approver_roles": ["grid_operator", "safety_engineer"],
+        "event_triggers": ["overtemp_alarm", "rtu_link_loss"],
+        "llm_mode_preference": "offline",
+    }
+    req_res = client.post("/api/v1/onboarding/requirements", json=req_payload)
+    assert req_res.status_code == 200
+    req_body = req_res.json()["data"]
+    assert req_body["result"]["passed"] is True
+    assert req_body["result"]["unlocked_next_step"] == "step-2-environment"
+    assert req_body["state"]["completed_count"] == 1
+    assert req_body["state"]["requirements"]["project_name"] == "GridSentinel"
+    assert (paths.home.parent / "DOMAIN_BLUEPRINT_SPEC.md").is_file()
+
+    # Sequentially verify remaining Steps 2 through 8; each step unlocks the next step
+    for idx, step in enumerate(init_state["steps"][1:], start=2):
         v_res = client.post(f"/api/v1/onboarding/steps/{step['step_id']}/verify")
         assert v_res.status_code == 200
         body = v_res.json()["data"]
         assert body["result"]["passed"] is True
         assert body["state"]["completed_count"] == idx
-        if idx < 7:
+        if idx < 8:
             assert body["result"]["unlocked_next_step"] == init_state["steps"][idx]["step_id"]
             assert body["state"]["steps"][idx]["status"] == "current"
         else:
             assert body["state"]["all_completed"] is True
 
-    # Reset brings progress back to Step 1
+    # Reset brings progress back to Step 1 and clears saved requirements
     reset_state = client.post("/api/v1/onboarding/reset").json()["data"]
     assert reset_state["completed_count"] == 0
     assert reset_state["current_step_number"] == 1
+    assert reset_state["requirements"] is None
 

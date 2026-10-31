@@ -255,19 +255,82 @@
       <div id="tab-wizard" class="tab-pane">
         <div class="card">
           <h2>
-            <span>🧭 Gated 7-Step Blueprint Customization Workflow</span>
+            <span>🧭 Gated 8-Step Blueprint Customization Workflow</span>
             <div style="display:flex;gap:8px;align-items:center;">
-              <span id="wizard-progress-badge" class="badge ok">0 / 7 Completed (0%)</span>
+              <span id="wizard-progress-badge" class="badge ok">0 / 8 Completed (0%)</span>
               <button class="secondary" style="padding:4px 10px;font-size:0.76rem;" onclick="resetOnboarding()">↺ Reset Progress</button>
             </div>
           </h2>
           <p style="font-size:0.83rem;color:var(--muted);margin-top:0;">
-            Complete and verify each step in order. <strong>Step <em>N+1</em> remains locked until Step <em>N</em> passes automated verification.</strong>
+            Starts with <strong>Step 1: Requirement Discovery Interview</strong>. Complete and verify each step in order—<strong>Step <em>N+1</em> remains locked until Step <em>N</em> passes automated verification.</strong>
           </p>
           <div style="background:#080c17;border:1px solid var(--border);border-radius:999px;height:10px;overflow:hidden;margin-bottom:14px;">
             <div id="wizard-progress-bar" style="background:var(--green);height:100%;width:0%;transition:width 0.25s;"></div>
           </div>
           <div id="wizard-feedback" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel-alt);font-size:0.82rem;"></div>
+
+          <!-- Step 1 Requirement Discovery Questionnaire Form -->
+          <div id="req-interview-box" style="background:#0e1528;border:1px solid var(--accent);border-radius:8px;padding:14px;margin-bottom:14px;">
+            <h3 style="margin-top:0;color:#93c5fd;">📋 Step 1: Requirement Discovery Questionnaire (Ask Requirements First)</h3>
+            <p style="font-size:0.8rem;color:var(--muted);margin-top:0;">
+              Define what your new system needs before customizing code. Submitting saves <code>var/domain_requirements.json</code> &amp; <code>var/DOMAIN_BLUEPRINT_SPEC.md</code> and unlocks Step 2.
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.8rem;">
+              <div>
+                <label>1. Project Name</label>
+                <input id="req-project_name" style="width:100%;margin-top:3px;" value="ServiceSentinel" />
+              </div>
+              <div>
+                <label>3. Scope Entity Name (<code>ScopeContext.scope_id</code>)</label>
+                <input id="req-scope_entity_name" style="width:100%;margin-top:3px;" value="cluster" />
+              </div>
+              <div style="grid-column:1 / -1;">
+                <label>2. Domain Purpose (What problem does this system solve?)</label>
+                <input id="req-domain_purpose" style="width:100%;margin-top:3px;" value="Automated reliability monitoring, root-cause triage, and human-governed remediation" />
+              </div>
+              <div>
+                <label>4. Sample Scope IDs (comma-separated)</label>
+                <input id="req-sample_scope_ids" style="width:100%;margin-top:3px;" value="prod-cluster-01, edge-site-alpha" />
+              </div>
+              <div>
+                <label>5. Key Metrics to Monitor &amp; Fact-Check (comma-separated)</label>
+                <input id="req-key_metrics" style="width:100%;margin-top:3px;" value="cpu_load_ratio, p99_latency_ms, availability_sla" />
+              </div>
+              <div>
+                <label>6. Agent Archetypes (<code>query, report, rulecard, ops</code>)</label>
+                <input id="req-selected_archetypes" style="width:100%;margin-top:3px;" value="query, report, rulecard, ops" />
+              </div>
+              <div>
+                <label>7. Read-Only Host Tools (comma-separated)</label>
+                <input id="req-read_only_tools" style="width:100%;margin-top:3px;" value="get_system_metrics, list_recent_anomalies" />
+              </div>
+              <div>
+                <label>8. Governed Mutating Proposal Tools (comma-separated)</label>
+                <input id="req-mutating_proposals" style="width:100%;margin-top:3px;" value="submit_report_draft, simulate_rule_change, propose_rule_draft, create_ticket, propose_intent" />
+              </div>
+              <div>
+                <label>9. Human Approver Roles (comma-separated)</label>
+                <input id="req-human_approver_roles" style="width:100%;margin-top:3px;" value="ops_lead, domain_expert, safety_officer" />
+              </div>
+              <div>
+                <label>10. Automated Event Triggers (comma-separated)</label>
+                <input id="req-event_triggers" style="width:100%;margin-top:3px;" value="link_packet_loss, latency_spike" />
+              </div>
+              <div>
+                <label>11. Preferred LLM Routing Mode</label>
+                <select id="req-llm_mode_preference" style="width:100%;margin-top:3px;">
+                  <option value="offline">offline (Deterministic OfflinePlanner)</option>
+                  <option value="custom_python_backend">custom_python_backend (OMP_LLM_BACKEND)</option>
+                  <option value="external_openai_api">external_openai_api (models.yml)</option>
+                  <option value="omp_extension">omp_extension (OMP_MODEL cursor-sdk)</option>
+                </select>
+              </div>
+            </div>
+            <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:10px;">
+              <button class="success" onclick="submitRequirements()">💾 Save Requirements &amp; Complete Step 1</button>
+            </div>
+          </div>
+
           <div id="wizard-steps-list" style="display:flex;flex-direction:column;gap:12px;"></div>
         </div>
       </div>
@@ -616,6 +679,42 @@
           </div>`;
         }).join('');
       }
+    }
+
+    function splitCsv(val) {
+      return (val || '').split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    async function submitRequirements() {
+      const payload = {
+        project_name: document.getElementById('req-project_name').value.trim(),
+        domain_purpose: document.getElementById('req-domain_purpose').value.trim(),
+        scope_entity_name: document.getElementById('req-scope_entity_name').value.trim(),
+        sample_scope_ids: splitCsv(document.getElementById('req-sample_scope_ids').value),
+        key_metrics: splitCsv(document.getElementById('req-key_metrics').value),
+        selected_archetypes: splitCsv(document.getElementById('req-selected_archetypes').value),
+        read_only_tools: splitCsv(document.getElementById('req-read_only_tools').value),
+        mutating_proposals: splitCsv(document.getElementById('req-mutating_proposals').value),
+        human_approver_roles: splitCsv(document.getElementById('req-human_approver_roles').value),
+        event_triggers: splitCsv(document.getElementById('req-event_triggers').value),
+        llm_mode_preference: document.getElementById('req-llm_mode_preference').value
+      };
+      const fb = document.getElementById('wizard-feedback');
+      fb.style.display = 'block';
+      fb.innerHTML = '⏳ Saving Domain Requirement Spec and verifying Step 1...';
+      const res = await fetch('/api/v1/onboarding/requirements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        fb.innerHTML = `❌ Failed saving requirements: ${JSON.stringify(body)}`;
+        return;
+      }
+      const r = body.data.result;
+      fb.innerHTML = `<strong>✅ Step 1 Requirements Saved!</strong> ${r.summary} — <strong>Unlocked <code>${r.unlocked_next_step}</code>!</strong>`;
+      await reloadDashboard();
     }
 
     async function verifyStep(stepId) {

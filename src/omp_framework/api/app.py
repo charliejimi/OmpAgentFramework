@@ -25,7 +25,7 @@ from omp_framework.control.store import GovernanceStore
 from omp_framework.llm.backend import LlmBackend, OfflinePlanner, load_backend
 from omp_framework.llm.endpoint import MOUNT_PREFIX, create_llm_endpoint
 from omp_framework.memory.store import ExpertMemoryStore
-from omp_framework.onboarding.engine import OnboardingWorkflow
+from omp_framework.onboarding.engine import DomainRequirementSpec, OnboardingWorkflow
 from omp_framework.rpc.process import (
     DEFAULT_OMP_EXE,
     OMP_SHA256,
@@ -428,6 +428,21 @@ def create_app(
     @app.get("/api/v1/onboarding")
     async def get_onboarding() -> dict[str, Any]:
         return _envelope(onboarding.get_state().model_dump(), mode=runner.current_mode)
+
+    @app.post("/api/v1/onboarding/requirements")
+    async def submit_onboarding_requirements(spec: DomainRequirementSpec) -> Response:
+        res = await run_in_threadpool(onboarding.save_requirements, spec)
+        status_code = 200 if res.passed else 409
+        return JSONResponse(
+            status_code=status_code,
+            content=_envelope(
+                {
+                    "result": res.model_dump(),
+                    "state": onboarding.get_state().model_dump(),
+                },
+                mode=runner.current_mode,
+            ),
+        )
 
     @app.post("/api/v1/onboarding/steps/{step_id}/verify")
     async def verify_onboarding_step(step_id: str) -> Response:

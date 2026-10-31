@@ -4,36 +4,41 @@ This guide explains how to take the `OmpAgentFramework` blueprint and adapt it t
 
 ---
 
-## 0. Interactive Step-by-Step Onboarding Wizard (Gated Progression)
+## 0. Interactive Step-by-Step Onboarding Wizard (Starts by Asking Requirements!)
 
-`OmpAgentFramework` includes a **built-in 7-step gated workflow** (`src/omp_framework/onboarding/`) that guides you step-by-step and **locks Step $N+1$ until Step $N$ passes automated verification**:
+`OmpAgentFramework` includes a **built-in 8-step gated workflow** (`src/omp_framework/onboarding/`) that **starts by asking for your domain requirements in Step 1** and **locks Step $N+1$ until Step $N$ passes automated verification**:
 
-1. **In the Web Launchpad UI**: Open `http://127.0.0.1:8710` -> Tab **`🧭 0. Step-by-Step Setup Wizard`** -> click **`✓ Verify Step N & Unlock Next`** as you finish each step.
-2. **In the Terminal (CLI Wizard)**:
+1. **In the Web Launchpad UI**: Open `http://127.0.0.1:8710` -> Tab **`🧭 0. Step-by-Step Setup Wizard`** -> fill out **`📋 Step 1: Requirement Discovery Questionnaire`** -> click **`💾 Save Requirements & Complete Step 1`**, then click **`✓ Verify Step N & Unlock Next`** as you finish each subsequent step.
+2. **In the Terminal (Interactive CLI Interview & Wizard)**:
    ```powershell
+   # Step 1: Run the interactive 11-question Requirement Discovery Interview
+   # (Saves var/domain_requirements.json & var/DOMAIN_BLUEPRINT_SPEC.md and unlocks Step 2)
+   .venv\Scripts\python -m omp_framework.onboarding interview
+
    # View current active step, files to edit, and instructions
    .venv\Scripts\python -m omp_framework.onboarding status
 
    # Verify the current step and unlock the next step
    .venv\Scripts\python -m omp_framework.onboarding verify
 
-   # Run all 7 step verifications sequentially
+   # Run all 8 step verifications sequentially
    .venv\Scripts\python -m omp_framework.onboarding verify-all
 
    # Reset onboarding progress back to Step 1
    .venv\Scripts\python -m omp_framework.onboarding reset
    ```
-3. **With AI Coding Agents**: The repository includes `.github/skills/blueprint-onboarding/SKILL.md` so Copilot / Cursor / Claude agents automatically follow the 7-step gated workflow with you.
+3. **With AI Coding Agents**: The repository includes `.github/skills/blueprint-onboarding/SKILL.md` so Copilot / Cursor / Claude agents automatically interview you for the 11 domain requirements first before writing any code.
 
 | Step # | Step ID | What It Guides & Verifies |
 |---|---|---|
-| **Step 1** | `step-1-environment` | Python `.venv`, isolated `var/omp-home/`, and `tools/omp/omp.exe` SHA-256 verification. |
-| **Step 2** | `step-2-domain-scopes` | Target execution scopes (`ScopeContext`) and domain telemetry structure in `src/starter_domain/pack.py`. |
-| **Step 3** | `step-3-host-tools` | Read-only & mutating Host Tools (`@registry.tool`), ensuring `scope_id` is host-injected (never in LLM args). |
-| **Step 4** | `step-4-agent-profiles` | `agents/omp/*.md` profiles (`omp-agent:` marker, YAML frontmatter `tools`, `max_tool_calls`, `timeout_s`). |
-| **Step 5** | `step-5-policy-gate` | `PolicyGate` RBAC matrix (blocking agents from human actions) and pre-approved `CatalogEntry` items. |
-| **Step 6** | `step-6-llm-planner` | `/llm/v1` router and deterministic `OfflinePlanner` responses for every agent profile. |
-| **Step 7** | `step-7-e2e-run` | End-to-end governed tool execution, `SourceRef` provenance citations, and immutable `AuditSink` records. |
+| **Step 1** | `step-1-requirements` | **Requirement Discovery Interview**: Asks 11 questions (purpose, scope entity, metrics, agent archetypes, tools, human approver roles, triggers, LLM mode) and generates `var/DOMAIN_BLUEPRINT_SPEC.md`. |
+| **Step 2** | `step-2-environment` | Python `.venv`, isolated `var/omp-home/`, and `tools/omp/omp.exe` SHA-256 verification. |
+| **Step 3** | `step-3-domain-scopes` | Target execution scopes (`ScopeContext`) and domain telemetry structure in `src/starter_domain/pack.py`. |
+| **Step 4** | `step-4-host-tools` | Read-only & mutating Host Tools (`@registry.tool`), ensuring `scope_id` is host-injected (never in LLM args). |
+| **Step 5** | `step-5-agent-profiles` | `agents/omp/*.md` profiles (`omp-agent:` marker, YAML frontmatter `tools`, `max_tool_calls`, `timeout_s`). |
+| **Step 6** | `step-6-policy-gate` | `PolicyGate` RBAC matrix (blocking agents from human actions) and pre-approved `CatalogEntry` items. |
+| **Step 7** | `step-7-llm-planner` | `/llm/v1` router and deterministic `OfflinePlanner` responses for every agent profile. |
+| **Step 8** | `step-8-e2e-run` | End-to-end governed tool execution, `SourceRef` provenance citations, and immutable `AuditSink` records. |
 
 ---
 

@@ -25,13 +25,53 @@ from omp_framework.contracts import ContractModel
 from omp_framework.rpc.process import DEFAULT_OMP_EXE, OMP_SHA256, repo_root, var_dir
 
 __all__ = [
+    "DomainRequirementSpec",
     "OnboardingCheckResult",
     "OnboardingStateView",
     "OnboardingStepView",
     "OnboardingWorkflow",
+    "REQUIREMENT_QUESTIONS",
 ]
 
 StepStatus = Literal["locked", "current", "completed"]
+
+
+class DomainRequirementSpec(ContractModel):
+    """Structured domain requirements captured during Step 1 (Requirement Discovery Interview)."""
+
+    project_name: str = Field(min_length=2, description="Name of the new system (e.g., GridSentinel, FinOpsGuard, ICUWatch)")
+    domain_purpose: str = Field(min_length=5, description="What problem this system solves and what it monitors/governs")
+    scope_entity_name: str = Field(min_length=2, description="What a single ScopeContext represents (e.g., substation, k8s_cluster, factory_line, dam_site)")
+    sample_scope_ids: list[str] = Field(min_length=1, description="1 to 3 example scope IDs (e.g., ['substation-north-01', 'substation-south-02'])")
+    key_metrics: list[str] = Field(min_length=1, description="Key numeric metrics/signals to monitor and fact-check (e.g., ['voltage_kv', 'transformer_temp_c', 'Availability_sla'])")
+    selected_archetypes: list[Literal["query", "report", "rulecard", "ops"]] = Field(
+        min_length=1,
+        default_factory=lambda: ["query", "report", "rulecard", "ops"],
+        description="Which of the 4 universal agent archetypes to include",
+    )
+    read_only_tools: list[str] = Field(min_length=1, description="Read-only Host Tools needed (e.g., ['get_grid_metrics', 'list_line_faults'])")
+    mutating_proposals: list[str] = Field(min_length=1, description="Governed write proposals needed (e.g., ['submit_report_draft', 'create_ticket', 'propose_intent', 'propose_rule_draft'])")
+    human_approver_roles: list[str] = Field(min_length=1, default_factory=lambda: ["domain_expert", "ops_lead"], description="Human roles required to approve intents, sign rules, or publish reports")
+    event_triggers: list[str] = Field(default_factory=lambda: ["threshold_breach", "telemetry_link_loss"], description="Automated anomaly events that should wake up the ops agent")
+    llm_mode_preference: Literal["offline", "custom_python_backend", "external_openai_api", "omp_extension"] = Field(
+        default="offline",
+        description="Preferred LLM routing mode",
+    )
+
+
+REQUIREMENT_QUESTIONS: list[dict[str, str]] = [
+    {"field": "project_name", "question": "1. What is the name of your new system?", "default": "CustomSentinel"},
+    {"field": "domain_purpose", "question": "2. What is the core purpose of your system (what domain does it monitor & govern)?", "default": "Automated reliability monitoring, root-cause triage, and human-governed remediation"},
+    {"field": "scope_entity_name", "question": "3. What does a single execution scope (`ScopeContext.scope_id`) represent in your domain?", "default": "cluster"},
+    {"field": "sample_scope_ids", "question": "4. List 1-3 example scope IDs (comma-separated):", "default": "prod-cluster-01, edge-site-alpha"},
+    {"field": "key_metrics", "question": "5. List the key numeric metrics to monitor and fact-check (comma-separated):", "default": "cpu_load_ratio, p99_latency_ms, availability_sla"},
+    {"field": "selected_archetypes", "question": "6. Which agent archetypes do you need? (comma-separated from: query, report, rulecard, ops):", "default": "query, report, rulecard, ops"},
+    {"field": "read_only_tools", "question": "7. What read-only Host Tools should agents call? (comma-separated):", "default": "get_system_metrics, list_recent_anomalies"},
+    {"field": "mutating_proposals", "question": "8. What governed mutating/proposal tools should agents call? (comma-separated):", "default": "submit_report_draft, simulate_rule_change, propose_rule_draft, create_ticket, propose_intent"},
+    {"field": "human_approver_roles", "question": "9. Which human roles are authorized to approve intents, sign rules, or publish reports? (comma-separated):", "default": "ops_lead, domain_expert, safety_officer"},
+    {"field": "event_triggers", "question": "10. What external/scheduled anomaly events should wake up your triage agent? (comma-separated):", "default": "link_packet_loss, latency_spike"},
+    {"field": "llm_mode_preference", "question": "11. Which LLM mode do you want to start with? (offline | custom_python_backend | external_openai_api | omp_extension):", "default": "offline"},
+]
 
 
 class OnboardingCheckResult(ContractModel):
@@ -64,6 +104,8 @@ class OnboardingStateView(ContractModel):
     total_steps: int
     progress_pct: int
     all_completed: bool
+    requirements: DomainRequirementSpec | None = None
+    requirement_questions: list[dict[str, str]] = Field(default_factory=lambda: list(REQUIREMENT_QUESTIONS))
     steps: list[OnboardingStepView]
 
 
@@ -91,7 +133,7 @@ class _StepSpec:
 
 
 class OnboardingWorkflow:
-    """7-step gated workflow guiding users from initial setup to full governed agent deployment."""
+    """8-step gated workflow starting with Step 1 (Requirement Discovery Interview) through Step 8 (E2E Verification)."""
 
     def __init__(
         self,
@@ -101,7 +143,9 @@ class OnboardingWorkflow:
     ) -> None:
         self.app_state = app_state
         self.state_file = state_file or (var_dir() / "onboarding_progress.json")
+        self.requirements_file = self.state_file.parent / "domain_requirements.json"
         self._completed: dict[str, dict[str, str]] = {}
+        self._requirements: DomainRequirementSpec | None = None
         self._steps: list[_StepSpec] = self._build_steps()
         self._load_state()
 
@@ -115,19 +159,53 @@ class OnboardingWorkflow:
                     }
             except (OSError, json.JSONDecodeError):
                 self._completed = {}
+        if self.requirements_file.is_file():
+            try:
+                raw_req = json.loads(self.requirements_file.read_text(encoding="utf-8"))
+                self._requirements = DomainRequirementSpec.model_validate(raw_req)
+            except Exception:
+                self._requirements = None
 
     def _save_state(self) -> None:
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         payload = {"completed": self._completed, "updated_at": datetime.now(UTC).isoformat()}
         self.state_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
+    def save_requirements(self, spec: DomainRequirementSpec) -> OnboardingCheckResult:
+        """Save the user's `DomainRequirementSpec`, generate markdown blueprint summary, and auto-verify Step 1."""
+        self.requirements_file.parent.mkdir(parents=True, exist_ok=True)
+        self.requirements_file.write_text(
+            json.dumps(spec.model_dump(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        md_path = self.requirements_file.parent / "DOMAIN_BLUEPRINT_SPEC.md"
+        md_lines = [
+            f"# Domain Blueprint Specification — {spec.project_name}",
+            "",
+            f"- **Purpose**: {spec.domain_purpose}",
+            f"- **Scope Entity (`ScopeContext.scope_id`)**: `{spec.scope_entity_name}` (Examples: {', '.join(f'`{s}`' for s in spec.sample_scope_ids)})",
+            f"- **Key Monitored & Fact-Checked Metrics**: {', '.join(f'`{m}`' for m in spec.key_metrics)}",
+            f"- **Selected OMP Agent Archetypes**: {', '.join(f'`{a}`' for a in spec.selected_archetypes)}",
+            f"- **Read-Only Host Tools**: {', '.join(f'`{t}`' for t in spec.read_only_tools)}",
+            f"- **Governed Mutating Proposals**: {', '.join(f'`{t}`' for t in spec.mutating_proposals)}",
+            f"- **Human Approver Roles (`PolicyGate`)**: {', '.join(f'`{r}`' for r in spec.human_approver_roles)}",
+            f"- **Automated Event Triggers**: {', '.join(f'`{e}`' for e in spec.event_triggers)}",
+            f"- **Preferred LLM Mode**: `{spec.llm_mode_preference}`",
+            "",
+        ]
+        md_path.write_text("\n".join(md_lines), encoding="utf-8")
+        self._requirements = spec
+        return self.verify_step("step-1-requirements")
+
     def reset(self) -> OnboardingStateView:
         self._completed.clear()
-        if self.state_file.is_file():
-            try:
-                self.state_file.unlink()
-            except OSError:
-                pass
+        self._requirements = None
+        for f in (self.state_file, self.requirements_file):
+            if f.is_file():
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
         return self.get_state()
 
     def get_state(self) -> OnboardingStateView:
@@ -172,6 +250,7 @@ class OnboardingWorkflow:
             total_steps=total,
             progress_pct=int(round((done_count / total) * 100)) if total else 100,
             all_completed=(done_count == total),
+            requirements=self._requirements,
             steps=views,
         )
 
@@ -223,9 +302,23 @@ class OnboardingWorkflow:
     def _build_steps(self) -> list[_StepSpec]:
         return [
             _StepSpec(
-                step_id="step-1-environment",
+                step_id="step-1-requirements",
                 step_number=1,
-                title="Step 1: Environment & Sandboxed OMP Runtime",
+                title="Step 1: Requirement Discovery & Domain Blueprint Interview",
+                goal="Answer the 11 domain requirement questions (project purpose, scopes, metrics, agent archetypes, tools, human approver roles, and triggers) to generate your Domain Blueprint Spec.",
+                files_to_edit=["var/domain_requirements.json", "var/DOMAIN_BLUEPRINT_SPEC.md"],
+                instructions=[
+                    "Fill out the Requirement Discovery Questionnaire in the Setup Wizard UI (or run `.venv\\Scripts\\python -m omp_framework.onboarding interview` in the terminal).",
+                    "Specify your system's purpose, what `ScopeContext` represents, key metrics to fact-check, required Host Tools, and which human roles approve actions.",
+                    "Submit the requirements to generate `var/domain_requirements.json` + `var/DOMAIN_BLUEPRINT_SPEC.md` and unlock Step 2.",
+                ],
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding interview",
+                verifier=self._verify_step_requirements,
+            ),
+            _StepSpec(
+                step_id="step-2-environment",
+                step_number=2,
+                title="Step 2: Environment & Sandboxed OMP Runtime",
                 goal="Verify Python environment, isolated `var/omp-*` directories, and `tools/omp/omp.exe` SHA-256.",
                 files_to_edit=["scripts/get-omp.ps1", "pyproject.toml"],
                 instructions=[
@@ -233,41 +326,41 @@ class OnboardingWorkflow:
                     "Run `powershell -ExecutionPolicy Bypass -File scripts/get-omp.ps1` to fetch and SHA-256 verify omp 18.11.2.",
                     "Click 'Verify & Unlock Next Step' to confirm the omp runtime and sandbox directories are ready.",
                 ],
-                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-1-environment",
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-2-environment",
                 verifier=self._verify_step_1,
             ),
             _StepSpec(
-                step_id="step-2-domain-scopes",
-                step_number=2,
-                title="Step 2: Define Domain Scopes & Telemetry Data",
-                goal="Define your target execution scopes (`ScopeContext`) and domain data structures.",
+                step_id="step-3-domain-scopes",
+                step_number=3,
+                title="Step 3: Define Domain Scopes & Telemetry Data",
+                goal="Define your target execution scopes (`ScopeContext`) and domain data structures matching your Step 1 requirements.",
                 files_to_edit=["src/starter_domain/pack.py", "src/omp_framework/contracts.py"],
                 instructions=[
-                    "Inspect or customize `SAMPLE_SCOPES` in `src/starter_domain/pack.py` with your domain's target scopes (e.g., clusters, sites, plants, or accounts).",
+                    "Inspect or customize `SAMPLE_SCOPES` in `src/starter_domain/pack.py` with your domain's target scopes defined in Step 1.",
                     "Ensure each scope has a unique `scope_id`, `name`, `as_of`, and `metrics` dictionary.",
                     "Remember: `ScopeContext` is injected by the host so the LLM can never spoof or cross-contaminate scopes.",
                 ],
-                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-2-domain-scopes",
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-3-domain-scopes",
                 verifier=self._verify_step_2,
             ),
             _StepSpec(
-                step_id="step-3-host-tools",
-                step_number=3,
-                title="Step 3: Register Read-Only & Mutating Host Tools",
+                step_id="step-4-host-tools",
+                step_number=4,
+                title="Step 4: Register Read-Only & Mutating Host Tools",
                 goal="Register Host Tools with `@registry.tool(...)`, Pydantic argument schemas, and `SourceRef` provenance.",
                 files_to_edit=["src/starter_domain/pack.py", "src/omp_framework/tools/registry.py"],
                 instructions=[
                     "Define Pydantic `ContractModel` argument schemas for your tools in `src/starter_domain/pack.py` (never include `scope_id` in LLM arguments).",
-                    "Register at least one `read_only` tool (returning `SourceRef` provenance) and one mutating proposal tool (`report_draft`, `rule_draft`, `ticket`, or `intent`).",
+                    "Register the read-only and mutating proposal tools identified in your Step 1 Requirement Spec.",
                     "Verify that all tool schemas serialize cleanly to omp `set_host_tools` JSON Schema.",
                 ],
-                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-3-host-tools",
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-4-host-tools",
                 verifier=self._verify_step_3,
             ),
             _StepSpec(
-                step_id="step-4-agent-profiles",
-                step_number=4,
-                title="Step 4: Configure OMP Agent Markdown Profiles",
+                step_id="step-5-agent-profiles",
+                step_number=5,
+                title="Step 5: Configure OMP Agent Markdown Profiles",
                 goal="Create or customize `agents/omp/*.md` profiles with `omp-agent:` markers, tool bindings, and RunLimits.",
                 files_to_edit=["agents/omp/query.md", "agents/omp/report.md", "agents/omp/rulecard.md", "agents/omp/ops.md"],
                 instructions=[
@@ -275,13 +368,13 @@ class OnboardingWorkflow:
                     "Ensure every tool listed in an agent's `tools:` YAML frontmatter is registered in `ToolRegistry`.",
                     "Keep system prompts free of `{{...}}` handlebars syntax.",
                 ],
-                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-4-agent-profiles",
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-5-agent-profiles",
                 verifier=self._verify_step_4,
             ),
             _StepSpec(
-                step_id="step-5-policy-gate",
-                step_number=5,
-                title="Step 5: Configure PolicyGate RBAC & Autonomous Catalog",
+                step_id="step-6-policy-gate",
+                step_number=6,
+                title="Step 6: Configure PolicyGate RBAC & Autonomous Catalog",
                 goal="Verify PolicyGate enforces Agent-vs-Human boundaries, read-only scopes, and pre-approved Catalog entries.",
                 files_to_edit=["src/omp_framework/control/gate.py", "src/starter_domain/pack.py"],
                 instructions=[
@@ -289,13 +382,13 @@ class OnboardingWorkflow:
                     "Review `DEFAULT_CATALOG` in `src/starter_domain/pack.py` for pre-approved ticket categories and autonomous intents.",
                     "Verification runs live PolicyGate checks to confirm agents are blocked from human actions and unauthorized tools.",
                 ],
-                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-5-policy-gate",
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-6-policy-gate",
                 verifier=self._verify_step_5,
             ),
             _StepSpec(
-                step_id="step-6-llm-planner",
-                step_number=6,
-                title="Step 6: Verify LLM Router & Deterministic Offline Planner",
+                step_id="step-7-llm-planner",
+                step_number=7,
+                title="Step 7: Verify LLM Router & Deterministic Offline Planner",
                 goal="Verify `/llm/v1` OpenAI-compatible router and deterministic `OfflinePlanner` for every agent profile.",
                 files_to_edit=["src/starter_domain/pack.py", "agents/omp/agent/models.yml"],
                 instructions=[
@@ -303,26 +396,64 @@ class OnboardingWorkflow:
                     "Optionally configure an external OpenAI-compatible provider in `agents/omp/agent/models.yml` or `OMP_LLM_BACKEND`.",
                     "Verification tests a simulated completion round-trip for each registered agent.",
                 ],
-                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-6-llm-planner",
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-7-llm-planner",
                 verifier=self._verify_step_6,
             ),
             _StepSpec(
-                step_id="step-7-e2e-run",
-                step_number=7,
-                title="Step 7: End-to-End Governed Agent Execution & Human Sign-Off",
+                step_id="step-8-e2e-run",
+                step_number=8,
+                title="Step 8: End-to-End Governed Agent Execution & Human Sign-Off",
                 goal="Run a complete agent execution + human governance workflow (or verify completed runs in this session).",
                 files_to_edit=["apps/launchpad/index.html", "tests/test_framework.py"],
                 instructions=[
                     "Execute an agent via `AgentRunner.run` (or click 'Verify & Unlock' to run an automated end-to-end diagnostic + proposal verification).",
                     "Verify that tool calls, `SourceRef` citations, and `AuditSink` entries are recorded.",
-                    "Once Step 7 passes, your custom Governed OMP Agent System is verified and ready for production!",
+                    "Once Step 8 passes, your custom Governed OMP Agent System is verified and ready for production!",
                 ],
-                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-7-e2e-run",
+                cli_command=".venv\\Scripts\\python -m omp_framework.onboarding verify step-8-e2e-run",
                 verifier=self._verify_step_7,
             ),
         ]
 
     # ── Step Verifiers ────────────────────────────────────────────────────────
+
+    def _verify_step_requirements(self) -> tuple[bool, str, list[dict[str, Any]], str | None]:
+        req = self._requirements
+        if req is None and self.requirements_file.is_file():
+            try:
+                req = DomainRequirementSpec.model_validate(
+                    json.loads(self.requirements_file.read_text(encoding="utf-8"))
+                )
+                self._requirements = req
+            except Exception:
+                req = None
+
+        if req is None:
+            return (
+                False,
+                "Domain requirements have not been captured yet.",
+                [
+                    {
+                        "check": "requirements_captured",
+                        "ok": False,
+                        "detail": "Submit the Requirement Discovery Questionnaire (UI or CLI `interview`) first.",
+                    }
+                ],
+                "Fill out and submit the Requirement Discovery form in Step 1 (or run `python -m omp_framework.onboarding interview`) to define your project requirements.",
+            )
+
+        checks = [
+            {"check": "project_and_purpose", "ok": bool(req.project_name and req.domain_purpose), "detail": f"{req.project_name}: {req.domain_purpose[:80]}"},
+            {"check": "scope_and_metrics", "ok": len(req.sample_scope_ids) >= 1 and len(req.key_metrics) >= 1, "detail": f"Scope={req.scope_entity_name} ({req.sample_scope_ids}), Metrics={req.key_metrics}"},
+            {"check": "archetypes_and_tools", "ok": len(req.selected_archetypes) >= 1 and len(req.read_only_tools) >= 1 and len(req.mutating_proposals) >= 1, "detail": f"Archetypes={req.selected_archetypes}, RO={req.read_only_tools}, Write={req.mutating_proposals}"},
+            {"check": "governance_roles", "ok": len(req.human_approver_roles) >= 1, "detail": f"Approvers={req.human_approver_roles}, Triggers={req.event_triggers}"},
+        ]
+        passed = all(c["ok"] for c in checks)
+        summary = (
+            f"Captured requirements for `{req.project_name}` (Scope: `{req.scope_entity_name}`, "
+            f"Archetypes: {req.selected_archetypes}, Tools: {len(req.read_only_tools)} RO / {len(req.mutating_proposals)} Write)."
+        )
+        return passed, summary, checks, "Complete all required fields in the Requirement Discovery Questionnaire."
 
     def _verify_step_1(self) -> tuple[bool, str, list[dict[str, Any]], str | None]:
         runner = self.app_state.runner
