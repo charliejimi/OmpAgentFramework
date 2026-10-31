@@ -15,7 +15,8 @@ Extracted from the HydroSentinel architecture into a clean, domain-agnostic blue
 | **3. Dynamic Host Tools & Scope Injection** | `src/omp_framework/tools/` | Register Host Tools with `@registry.tool(...)` and Pydantic parameter models. `ScopeContext` (`scope_id`, `as_of`, `tenant`, `read_only`) is injected by the host—never chosen by the LLM—preventing cross-scope hallucination or data leakage. Automatically tracks `SourceRef` provenance and `Citation` paths. |
 | **4. PolicyGate & Governance Store** | `src/omp_framework/control/` | Every Host Tool call and Human Action passes through `PolicyGate.authorize()` and writes an immutable `AuditEntry`. Agents can **propose** Intents, Tickets, Fact-Checked Report Drafts, and Simulated Rule Drafts, but **only authorized human roles** (or pre-approved Autonomous Catalog entries) can execute/publish/sign them. |
 | **5. Event Trigger Bus & Expert Memory** | `src/omp_framework/triggers/` & `memory/` | Deduplicates external/cron anomaly events by `(scope_id, event_id)` and wakes up the designated `omp` agent. `ExpertMemoryStore` retains and recalls human-adjudicated decision criteria across sessions. |
-| **6. Launchpad UI & REST API** | `src/omp_framework/api/` & `apps/launchpad/` | Ready-to-use FastAPI backend and interactive dark-mode Launchpad UI with Agent Console, Tool Trace & Citations, Human Approval Queues, Rule Simulation Diffs, Event Trigger Bus, and Audit Trail. |
+| **6. Gated 8-Step Onboarding Wizard** | `src/omp_framework/onboarding/` | Built-in **Requirement Discovery Interview (Step 1)** + sequential verification gate (Steps 2–8). Locks Step $N+1$ until Step $N$ passes live automated verification. Available in Web UI, CLI, and AI Agent Skill. |
+| **7. Launchpad UI & REST API** | `src/omp_framework/api/` & `apps/launchpad/` | Ready-to-use FastAPI backend and interactive dark-mode Launchpad UI with Setup Wizard, Agent Console, Tool Trace & Citations, Human Approval Queues, Rule Simulation Diffs, Event Trigger Bus, and Audit Trail. |
 
 ---
 
@@ -61,18 +62,53 @@ In `agents/omp/*.md` and `src/starter_domain/pack.py`, the blueprint ships with 
 
 ---
 
-## 🛠️ How to Customize This Blueprint for Your Own System
+## 🛠️ How to Use & Customize This Blueprint (Gated 8-Step Workflow)
 
-See **[docs/CUSTOMIZATION_GUIDE.md](docs/CUSTOMIZATION_GUIDE.md)** for a step-by-step guide on building your own domain system on top of `omp_framework`.
+The framework includes an interactive **8-Step Gated Onboarding & Requirement Discovery Workflow** (`src/omp_framework/onboarding/`) that **asks for your requirements first (Step 1)** and **locks Step $N+1$ until Step $N$ passes automated verification**.
 
-In short:
-1. **Keep `src/omp_framework/` untouched** — it is your reusable runtime, RPC bridge, PolicyGate, and UI engine.
-2. **Replace or extend `src/starter_domain/pack.py`** — define your own Pydantic tool argument models and register handlers with `@registry.tool(...)`.
-3. **Edit `agents/omp/<agent_id>.md`** — define your agents' `tools`, `max_tool_calls`, `timeout_s`, and system prompts.
-4. **Configure LLM mode**:
-   - **Default (`offline`)**: Deterministic `OfflinePlanner` for fast, zero-cost development and CI testing.
-   - **Custom Python Backend**: Set `$env:OMP_LLM_BACKEND = "my_pkg.llm:MyLiveBackend"`.
-   - **External OpenAI-Compatible API / OMP Extension**: Configure `agents/omp/agent/models.yml` or set `$env:OMP_MODEL = "<provider>/<model>"`.
+### 3 Ways to Run the Step-by-Step Workflow
+
+1. **Interactive Web Launchpad Wizard (Recommended)**:
+   - Start the server with `powershell -ExecutionPolicy Bypass -File scripts/dev.ps1` and open **`http://127.0.0.1:8710`**.
+   - On Tab **`🧭 0. Step-by-Step Setup Wizard`**, fill out **`📋 Step 1: Requirement Discovery Questionnaire`** (11 questions covering your project name, domain purpose, `ScopeContext` entity, metrics, agent archetypes, tools, human approver roles, triggers, and LLM mode) and click **`💾 Save Requirements & Complete Step 1`**.
+   - Follow Steps 2 → 8 in order, clicking **`✓ Verify Step N & Unlock Next`** as you complete each step.
+
+2. **Interactive Terminal CLI Wizard**:
+   ```powershell
+   # Step 1: Run the interactive 11-question Requirement Discovery Interview
+   # (Generates var/domain_requirements.json & var/DOMAIN_BLUEPRINT_SPEC.md and unlocks Step 2)
+   .venv\Scripts\python -m omp_framework.onboarding interview
+
+   # Check current active step, files to edit, and instructions
+   .venv\Scripts\python -m omp_framework.onboarding status
+
+   # Verify the current step and unlock the next step
+   .venv\Scripts\python -m omp_framework.onboarding verify
+
+   # Or verify all 8 steps sequentially
+   .venv\Scripts\python -m omp_framework.onboarding verify-all
+
+   # Reset progress back to Step 1
+   .venv\Scripts\python -m omp_framework.onboarding reset
+   ```
+
+3. **With AI Coding Agents (VS Code Copilot / Cursor / Claude)**:
+   - The repo includes [`.github/skills/blueprint-onboarding/SKILL.md`](.github/skills/blueprint-onboarding/SKILL.md). Simply ask your AI assistant: *"Help me customize this framework for my domain"* and it will interview you for the 11 requirements first, then walk you through Steps 2 → 8 one verified step at a time.
+
+### The 8 Gated Steps at a Glance
+
+| Step | Step ID | What You Do | Automated Gate Check |
+|---|---|---|---|
+| **Step 1** | `step-1-requirements` | Answer the 11 Requirement Discovery questions (UI form or CLI `interview`) | Validates `DomainRequirementSpec` & generates `var/DOMAIN_BLUEPRINT_SPEC.md` |
+| **Step 2** | `step-2-environment` | Run `uv sync --extra api` & `scripts/get-omp.ps1` | Verifies `omp.exe` SHA-256, isolated `var/omp-home/`, and rendered `models.yml` |
+| **Step 3** | `step-3-domain-scopes` | Define target scopes & telemetry in `src/starter_domain/pack.py` | Verifies `pack.scopes` schema (`scope_id`, `name`, `metrics`) |
+| **Step 4** | `step-4-host-tools` | Register `@registry.tool(...)` schemas & handlers in `src/starter_domain/pack.py` | Verifies read-only + mutating tools exist and **no `scope_id` leaks into LLM arguments** |
+| **Step 5** | `step-5-agent-profiles` | Customize `agents/omp/*.md` profiles (`tools`, `max_tool_calls`, `timeout_s`) | Verifies `omp-agent:` markers and checks that every declared tool exists in `ToolRegistry` |
+| **Step 6** | `step-6-policy-gate` | Configure human roles (`gate.py`) & `CatalogEntry` items (`pack.py`) | Runs live `PolicyGate.authorize()` checks confirming agents are blocked from human actions |
+| **Step 7** | `step-7-llm-planner` | Configure `OfflinePlanner` (`pack.py`) or external LLM (`models.yml` / `OMP_MODEL`) | Runs completion check across every loaded agent profile |
+| **Step 8** | `step-8-e2e-run` | Run end-to-end governed agent execution & human sign-off | Executes a governed `ToolSession` call and verifies `SourceRef` citations + `AuditSink` entries |
+
+For code snippets and deep-dive examples, see **[docs/CUSTOMIZATION_GUIDE.md](docs/CUSTOMIZATION_GUIDE.md)**.
 
 ---
 
@@ -80,6 +116,10 @@ In short:
 
 ```text
 OmpAgentFramework/
+├── .github/
+│   └── skills/
+│       └── blueprint-onboarding/
+│           └── SKILL.md             # AI Agent Skill: interviews requirements first, then steps 1->8
 ├── AGENTS.md                        # AI engineering & architecture contract
 ├── README.md                        # Quickstart & architecture overview
 ├── pyproject.toml                   # Python 3.12 package & pytest configuration
@@ -95,7 +135,7 @@ OmpAgentFramework/
 │           └── models.yml           # Template rendered to var/omp-home/agent/models.yml
 ├── apps/
 │   └── launchpad/
-│       └── index.html               # Interactive Governance & Agent Launchpad UI
+│       └── index.html               # Interactive Governance & Agent Launchpad UI (with Setup Wizard)
 ├── docs/
 │   └── CUSTOMIZATION_GUIDE.md       # Step-by-step blueprint customization guide
 ├── scripts/
@@ -105,6 +145,7 @@ OmpAgentFramework/
 ├── src/
 │   ├── omp_framework/               # REUSABLE FRAMEWORK CORE (Domain-Agnostic)
 │   │   ├── contracts.py             # ScopeContext, Citations, Gate, Proposals, LLM schemas
+│   │   ├── onboarding/              # Gated 8-step Requirement Interview & Verification Wizard
 │   │   ├── rpc/                     # omp stdio NDJSON v2 client & sandboxed process manager
 │   │   ├── llm/                     # /llm/v1 SSE proxy & OfflinePlanner base
 │   │   ├── tools/                   # Dynamic @registry.tool decorator & ScopeContext injection
