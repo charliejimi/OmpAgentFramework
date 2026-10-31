@@ -235,3 +235,41 @@ def test_llm_v1_sse_and_offline_planner_direct(tmp_path: Path) -> None:
     assert res.status_code == 200
     assert "data: [DONE]" in res.text
     assert "get_system_metrics" in res.text
+
+
+def test_gated_onboarding_workflow_step_by_step(tmp_path: Path) -> None:
+    paths = OmpPaths.under(tmp_path / "var")
+    app = create_app(port=8797, omp_command=FAKE_OMP_CMD, omp_paths=paths)
+    client = TestClient(app)
+
+    # Initial state: Step 1 is current, Steps 2..7 are locked
+    init_state = client.get("/api/v1/onboarding").json()["data"]
+    assert init_state["current_step_number"] == 1
+    assert init_state["completed_count"] == 0
+    assert init_state["steps"][0]["status"] == "current"
+    assert init_state["steps"][1]["status"] == "locked"
+
+    # Trying to jump ahead and verify Step 2 before Step 1 is completed returns HTTP 409 (locked)
+    skip_res = client.post("/api/v1/onboarding/steps/step-2-domain-scopes/verify")
+    assert skip_res.status_code == 409
+    assert skip_res.json()["data"]["result"]["passed"] is False
+    assert "locked until Step 1" in skip_res.json()["data"]["result"]["summary"]
+
+    # Sequentially verify Steps 1 through 7; each step unlocks the next step
+    for idx, step in enumerate(init_state["steps"], start=1):
+        v_res = client.post(f"/api/v1/onboarding/steps/{step['step_id']}/verify")
+        assert v_res.status_code == 200
+        body = v_res.json()["data"]
+        assert body["result"]["passed"] is True
+        assert body["state"]["completed_count"] == idx
+        if idx < 7:
+            assert body["result"]["unlocked_next_step"] == init_state["steps"][idx]["step_id"]
+            assert body["state"]["steps"][idx]["status"] == "current"
+        else:
+            assert body["state"]["all_completed"] is True
+
+    # Reset brings progress back to Step 1
+    reset_state = client.post("/api/v1/onboarding/reset").json()["data"]
+    assert reset_state["completed_count"] == 0
+    assert reset_state["current_step_number"] == 1
+

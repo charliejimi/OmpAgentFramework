@@ -25,6 +25,7 @@ from omp_framework.control.store import GovernanceStore
 from omp_framework.llm.backend import LlmBackend, OfflinePlanner, load_backend
 from omp_framework.llm.endpoint import MOUNT_PREFIX, create_llm_endpoint
 from omp_framework.memory.store import ExpertMemoryStore
+from omp_framework.onboarding.engine import OnboardingWorkflow
 from omp_framework.rpc.process import (
     DEFAULT_OMP_EXE,
     OMP_SHA256,
@@ -175,6 +176,9 @@ def create_app(
     app.state.llm_endpoint = llm_ep
     app.state.runner = runner
     app.state.trigger_bus = trigger_bus
+    state_file = (omp_paths.home.parent / "onboarding_progress.json") if omp_paths is not None else None
+    onboarding = OnboardingWorkflow(app_state=app.state, state_file=state_file)
+    app.state.onboarding = onboarding
 
     # Mount OpenAI-compatible `/llm/v1` router for omp
     app.include_router(llm_ep.router, prefix=MOUNT_PREFIX)
@@ -236,6 +240,7 @@ def create_app(
                 "memory": [m.model_dump() for m in memory.recall()],
                 "catalog": [c.model_dump() for c in gate.list_catalog()],
                 "audit": [a.model_dump() for a in audit.list_entries(limit=30)],
+                "onboarding": onboarding.get_state().model_dump(),
             },
             scope_id=scope_id,
             mode=runner.current_mode,
@@ -419,5 +424,32 @@ def create_app(
             scope_id=scope_id or "all",
             mode=runner.current_mode,
         )
+
+    @app.get("/api/v1/onboarding")
+    async def get_onboarding() -> dict[str, Any]:
+        return _envelope(onboarding.get_state().model_dump(), mode=runner.current_mode)
+
+    @app.post("/api/v1/onboarding/steps/{step_id}/verify")
+    async def verify_onboarding_step(step_id: str) -> Response:
+        try:
+            res = await run_in_threadpool(onboarding.verify_step, step_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        status_code = 200 if res.passed else 409
+        return JSONResponse(
+            status_code=status_code,
+            content=_envelope(
+                {
+                    "result": res.model_dump(),
+                    "state": onboarding.get_state().model_dump(),
+                },
+                mode=runner.current_mode,
+            ),
+        )
+
+    @app.post("/api/v1/onboarding/reset")
+    async def reset_onboarding() -> dict[str, Any]:
+        state = onboarding.reset()
+        return _envelope(state.model_dump(), mode=runner.current_mode)
 
     return app

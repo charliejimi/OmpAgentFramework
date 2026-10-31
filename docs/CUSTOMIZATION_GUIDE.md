@@ -4,6 +4,39 @@ This guide explains how to take the `OmpAgentFramework` blueprint and adapt it t
 
 ---
 
+## 0. Interactive Step-by-Step Onboarding Wizard (Gated Progression)
+
+`OmpAgentFramework` includes a **built-in 7-step gated workflow** (`src/omp_framework/onboarding/`) that guides you step-by-step and **locks Step $N+1$ until Step $N$ passes automated verification**:
+
+1. **In the Web Launchpad UI**: Open `http://127.0.0.1:8710` -> Tab **`🧭 0. Step-by-Step Setup Wizard`** -> click **`✓ Verify Step N & Unlock Next`** as you finish each step.
+2. **In the Terminal (CLI Wizard)**:
+   ```powershell
+   # View current active step, files to edit, and instructions
+   .venv\Scripts\python -m omp_framework.onboarding status
+
+   # Verify the current step and unlock the next step
+   .venv\Scripts\python -m omp_framework.onboarding verify
+
+   # Run all 7 step verifications sequentially
+   .venv\Scripts\python -m omp_framework.onboarding verify-all
+
+   # Reset onboarding progress back to Step 1
+   .venv\Scripts\python -m omp_framework.onboarding reset
+   ```
+3. **With AI Coding Agents**: The repository includes `.github/skills/blueprint-onboarding/SKILL.md` so Copilot / Cursor / Claude agents automatically follow the 7-step gated workflow with you.
+
+| Step # | Step ID | What It Guides & Verifies |
+|---|---|---|
+| **Step 1** | `step-1-environment` | Python `.venv`, isolated `var/omp-home/`, and `tools/omp/omp.exe` SHA-256 verification. |
+| **Step 2** | `step-2-domain-scopes` | Target execution scopes (`ScopeContext`) and domain telemetry structure in `src/starter_domain/pack.py`. |
+| **Step 3** | `step-3-host-tools` | Read-only & mutating Host Tools (`@registry.tool`), ensuring `scope_id` is host-injected (never in LLM args). |
+| **Step 4** | `step-4-agent-profiles` | `agents/omp/*.md` profiles (`omp-agent:` marker, YAML frontmatter `tools`, `max_tool_calls`, `timeout_s`). |
+| **Step 5** | `step-5-policy-gate` | `PolicyGate` RBAC matrix (blocking agents from human actions) and pre-approved `CatalogEntry` items. |
+| **Step 6** | `step-6-llm-planner` | `/llm/v1` router and deterministic `OfflinePlanner` responses for every agent profile. |
+| **Step 7** | `step-7-e2e-run` | End-to-end governed tool execution, `SourceRef` provenance citations, and immutable `AuditSink` records. |
+
+---
+
 ## 1. Architectural Separation: What Stays vs. What You Customize
 
 | Layer | Path | Action When Creating a New System |

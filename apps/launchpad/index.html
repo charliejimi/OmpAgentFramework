@@ -244,14 +244,36 @@
     <!-- Right Main Panel -->
     <div>
       <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('console', this)">1. OMP Agent Console</button>
+        <button class="tab-btn active" onclick="switchTab('wizard', this)">🧭 0. Step-by-Step Setup Wizard</button>
+        <button class="tab-btn" onclick="switchTab('console', this)">1. OMP Agent Console</button>
         <button class="tab-btn" onclick="switchTab('governance', this)">2. Human Approval Gate (Intents / Reports / Rules)</button>
         <button class="tab-btn" onclick="switchTab('triggers', this)">3. Event Triggers & Long-Term Memory</button>
         <button class="tab-btn" onclick="switchTab('audit', this)">4. PolicyGate Audit Trail</button>
       </div>
 
+      <!-- Tab 0: Step-by-Step Setup Wizard -->
+      <div id="tab-wizard" class="tab-pane">
+        <div class="card">
+          <h2>
+            <span>🧭 Gated 7-Step Blueprint Customization Workflow</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span id="wizard-progress-badge" class="badge ok">0 / 7 Completed (0%)</span>
+              <button class="secondary" style="padding:4px 10px;font-size:0.76rem;" onclick="resetOnboarding()">↺ Reset Progress</button>
+            </div>
+          </h2>
+          <p style="font-size:0.83rem;color:var(--muted);margin-top:0;">
+            Complete and verify each step in order. <strong>Step <em>N+1</em> remains locked until Step <em>N</em> passes automated verification.</strong>
+          </p>
+          <div style="background:#080c17;border:1px solid var(--border);border-radius:999px;height:10px;overflow:hidden;margin-bottom:14px;">
+            <div id="wizard-progress-bar" style="background:var(--green);height:100%;width:0%;transition:width 0.25s;"></div>
+          </div>
+          <div id="wizard-feedback" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel-alt);font-size:0.82rem;"></div>
+          <div id="wizard-steps-list" style="display:flex;flex-direction:column;gap:12px;"></div>
+        </div>
+      </div>
+
       <!-- Tab 1: OMP Agent Console -->
-      <div id="tab-console" class="tab-pane">
+      <div id="tab-console" class="tab-pane" style="display:none;">
         <div class="card">
           <h2>
             <span>Ask OMP Agent (<span id="selected-agent-label">query</span>)</span>
@@ -554,6 +576,69 @@
           <td style="font-size:0.76rem;">${a.reason}</td>
         </tr>`
       ).join('');
+
+      // Render Step-by-Step Setup Wizard
+      if (d.onboarding) {
+        const ob = d.onboarding;
+        document.getElementById('wizard-progress-badge').textContent =
+          `${ob.completed_count} / ${ob.total_steps} Completed (${ob.progress_pct}%)`;
+        document.getElementById('wizard-progress-bar').style.width = `${ob.progress_pct}%`;
+
+        document.getElementById('wizard-steps-list').innerHTML = ob.steps.map(s => {
+          const isDone = s.status === 'completed';
+          const isCurr = s.status === 'current';
+          const isLocked = s.status === 'locked';
+          const icon = isDone ? '✅' : (isCurr ? '👉' : '🔒');
+          const borderStyle = isCurr ? 'border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);' :
+                              (isDone ? 'border-color:#059669;opacity:0.92;' : 'opacity:0.55;');
+          const badgeClass = isDone ? 'ok' : (isCurr ? 'warn' : '');
+          return `<div style="background:var(--panel-alt);border:1px solid var(--border);border-radius:8px;padding:14px;${borderStyle}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+              <div style="font-weight:700;font-size:0.94rem;">${icon} ${s.title}</div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <span class="badge ${badgeClass}">${s.status.toUpperCase()}</span>
+                ${isCurr ? `<button class="success" style="padding:5px 12px;font-size:0.8rem;" onclick="verifyStep('${s.step_id}')">✓ Verify Step ${s.step_number} & Unlock Next</button>` : ''}
+                ${isDone ? `<button class="secondary" style="padding:4px 9px;font-size:0.75rem;" onclick="verifyStep('${s.step_id}')">Re-verify</button>` : ''}
+                ${isLocked ? `<button class="secondary" disabled style="padding:4px 9px;font-size:0.75rem;opacity:0.5;cursor:not-allowed;">🔒 Complete Previous Step First</button>` : ''}
+              </div>
+            </div>
+            <div style="font-size:0.82rem;color:var(--muted);margin-top:4px;"><strong>Goal:</strong> ${s.goal}</div>
+            <div style="font-size:0.78rem;margin-top:6px;">
+              <strong>Files to inspect/customize:</strong> ${s.files_to_edit.map(f => `<code>${f}</code>`).join(', ')}
+            </div>
+            ${(isCurr || isDone) ? `
+              <ol style="margin:8px 0 6px 20px;padding:0;font-size:0.81rem;color:var(--text);">
+                ${s.instructions.map(inst => `<li style="margin-bottom:3px;">${inst}</li>`).join('')}
+              </ol>
+              <div style="font-size:0.75rem;color:var(--muted);">CLI: <code>${s.cli_command}</code></div>
+            ` : ''}
+            ${s.last_check_summary ? `<div style="margin-top:6px;font-size:0.78rem;color:#34d399;">✓ Verified: ${s.last_check_summary}</div>` : ''}
+          </div>`;
+        }).join('');
+      }
+    }
+
+    async function verifyStep(stepId) {
+      const fb = document.getElementById('wizard-feedback');
+      fb.style.display = 'block';
+      fb.innerHTML = `⏳ Running automated verification checks for <code>${stepId}</code>...`;
+      const res = await fetch(`/api/v1/onboarding/steps/${encodeURIComponent(stepId)}/verify`, { method: 'POST' });
+      const body = await res.json();
+      const r = body.data.result;
+      const checksHtml = (r.checks || []).map(c =>
+        `<div>${c.ok ? '✅' : '❌'} <code>${c.check}</code>: ${c.detail}</div>`
+      ).join('');
+      fb.innerHTML = `<strong>${r.passed ? '✅ Step Verified!' : '❌ Verification Blocked:'}</strong> ${r.summary}` +
+        (r.unlocked_next_step ? ` — <strong>Unlocked <code>${r.unlocked_next_step}</code>!</strong>` : '') +
+        `<div style="margin-top:6px;font-size:0.78rem;">${checksHtml}</div>` +
+        (r.remediation_hint ? `<div style="margin-top:6px;color:#fbbf24;">💡 Hint: ${r.remediation_hint}</div>` : '');
+      await reloadDashboard();
+    }
+
+    async function resetOnboarding() {
+      document.getElementById('wizard-feedback').style.display = 'none';
+      await fetch('/api/v1/onboarding/reset', { method: 'POST' });
+      await reloadDashboard();
     }
 
     async function runAgent() {
