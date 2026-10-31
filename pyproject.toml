@@ -1,0 +1,38 @@
+[project]
+name = "omp-agent-framework"
+version = "0.1.0"
+description = "General-Purpose Governed AI Agent Framework powered by omp (oh-my-pi RPC) with Policy Gate, Human-in-the-Loop Approvals, Fact-Checked Drafts, Event Triggers, and Pluggable Domain Packs"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.10.0,<3",
+    "pyyaml>=6.0.2",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "httpx>=0.27.0",
+    "python-multipart>=0.0.18",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/omp_framework", "src/starter_domain"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = "-ra --import-mode=importlib"
+markers = [
+    "omp: Tests that run against the real tools/omp/omp.exe binary if available",
+]

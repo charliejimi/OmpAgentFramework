@@ -1,0 +1,5 @@
+# OmpAgentFramework runner configuration
+model: omp/omp-offline
+overlay: overlay.yml
+models_template: agent/models.yml
+system_prompt_route: plain

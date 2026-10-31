@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OMP Agent Framework — Governed Agentic Launchpad</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #131b31;
+      --panel-alt: #192340;
+      --border: #2a3964;
+      --text: #e8eefc;
+      --muted: #95a5c6;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --green: #10b981;
+      --yellow: #f59e0b;
+      --orange: #f97316;
+      --red: #ef4444;
+      --mono: "Cascadia Code", "Consolas", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 24px;
+      background: #0f1629;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      letter-spacing: 0.3px;
+    }
+    .badge {
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .badge.ok { color: #34d399; border-color: #059669; background: rgba(16, 185, 129, 0.12); }
+    .badge.warn { color: #fbbf24; border-color: #d97706; background: rgba(245, 158, 11, 0.12); }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    select, input, textarea, button {
+      background: var(--panel-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 11px;
+      font-size: 0.875rem;
+    }
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      border-color: var(--accent);
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+    button:hover { background: var(--accent-hover); }
+    button.secondary {
+      background: var(--panel-alt);
+      border-color: var(--border);
+    }
+    button.secondary:hover { background: #24325a; }
+    button.success { background: var(--green); border-color: var(--green); }
+    button.danger { background: var(--red); border-color: var(--red); }
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2, .card h3 {
+      margin-top: 0;
+      font-size: 0.98rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .kpi {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .kpi .label { font-size: 0.75rem; color: var(--muted); }
+    .kpi .val { font-size: 1.15rem; font-weight: 700; font-family: var(--mono); margin-top: 2px; }
+    .agent-list { display: flex; flex-direction: column; gap: 10px; }
+    .agent-item {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 11px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .agent-item.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .agent-item .title { font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; }
+    .agent-item .desc { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+    .tool-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+    .tool-tag {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #0d1426;
+      color: #93c5fd;
+      border: 1px solid #1e3a8a;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    pre {
+      background: #080c17;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .light-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .light-green { background: var(--green); }
+    .light-yellow { background: var(--yellow); }
+    .light-orange { background: var(--orange); }
+    .light-red { background: var(--red); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>🛡️ OmpAgentFramework Blueprint</h1>
+      <span id="domain-badge" class="badge">domain: loading...</span>
+      <span id="omp-badge" class="badge">omp: checking...</span>
+      <span id="mode-badge" class="badge">llm: offline</span>
+    </div>
+    <div class="controls">
+      <label style="font-size:0.82rem;color:var(--muted);">Execution Scope:</label>
+      <select id="scope-select" onchange="reloadDashboard()"></select>
+      <button class="secondary" onclick="toggleAutonomous()" id="auto-btn">Autonomous Catalog: OFF</button>
+      <button class="secondary" onclick="reloadDashboard()">↻ Refresh</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Left Sidebar: Scope Telemetry & Agent Archetypes -->
+    <div>
+      <div class="card">
+        <h2>
+          <span>Scope Telemetry</span>
+          <span id="scope-status-badge" class="badge"></span>
+        </h2>
+        <div class="kpi-grid" id="kpi-grid"></div>
+        <h3 style="margin-top:14px;margin-bottom:6px;font-size:0.85rem;color:var(--muted);">Node Lights & Cross-ID Trust</h3>
+        <table>
+          <thead>
+            <tr><th>Node</th><th>Load</th><th>Link</th><th>Trust</th></tr>
+          </thead>
+          <tbody id="nodes-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>4 Universal Agent Archetypes (`agents/omp/*.md`)</h2>
+        <div class="agent-list" id="agent-list"></div>
+      </div>
+    </div>
+
+    <!-- Right Main Panel -->
+    <div>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('console', this)">1. OMP Agent Console</button>
+        <button class="tab-btn" onclick="switchTab('governance', this)">2. Human Approval Gate (Intents / Reports / Rules)</button>
+        <button class="tab-btn" onclick="switchTab('triggers', this)">3. Event Triggers & Long-Term Memory</button>
+        <button class="tab-btn" onclick="switchTab('audit', this)">4. PolicyGate Audit Trail</button>
+      </div>
+
+      <!-- Tab 1: OMP Agent Console -->
+      <div id="tab-console" class="tab-pane">
+        <div class="card">
+          <h2>
+            <span>Ask OMP Agent (<span id="selected-agent-label">query</span>)</span>
+            <label style="font-size:0.8rem;font-weight:normal;">
+              <input type="checkbox" id="readonly-chk" /> Force `ScopeContext.read_only=true`
+            </label>
+          </h2>
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <button class="secondary" onclick="fillPrompt('query', 'Diagnose current cluster health, SLA, and active anomalies.')">Sample: Query Analyst</button>
+            <button class="secondary" onclick="fillPrompt('report', 'Generate a fact-checked operational health and SLA report draft.')">Sample: Fact-Checked Report</button>
+            <button class="secondary" onclick="fillPrompt('rulecard', 'Simulate and propose tightening alert thresholds to 0.65 / 0.80 / 0.92.')">Sample: Rule Compiler</button>
+            <button class="secondary" onclick="fillPrompt('ops', 'Triage recent gateway anomaly, apply expert memory, open ticket, and propose traffic reroute intent.')">Sample: Ops & Intent Triage</button>
+          </div>
+          <textarea id="prompt-input" rows="3" style="width:100%;margin-bottom:10px;">Diagnose current cluster health, SLA, and active anomalies.</textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.78rem;color:var(--muted);">Guardrails active: `/` commands blocked, `@file` mentions blocked, ScopeContext injected by host.</span>
+            <button onclick="runAgent()" id="run-btn">▶ Run via OMP RPC</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Agent Answer & Verifiable Citations</h2>
+          <pre id="agent-answer">Select an agent and click "Run via OMP RPC" to execute.</pre>
+          <h3>Host Tool Call Trace (PolicyGate Checked)</h3>
+          <table>
+            <thead>
+              <tr><th>#</th><th>Tool</th><th>Domain</th><th>Gate Effect</th><th>OK</th><th>Duration</th><th>Result / Error</th></tr>
+            </thead>
+            <tbody id="tool-trace-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 2: Governance & Human Approvals -->
+      <div id="tab-governance" class="tab-pane" style="display:none;">
+        <div class="card">
+          <h2>Control-Plane Intents (`approve_intent` requires `ops_lead` / `sre_approver`)</h2>
+          <table>
+            <thead>
+              <tr><th>Intent ID</th><th>Kind</th><th>Target</th><th>Trigger</th><th>Catalog</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody id="intents-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Simulated Rule Card Drafts (`sign_rule_draft` requires `domain_expert`)</h2>
+          <div id="active-rule-box" style="font-size:0.83rem;color:var(--muted);margin-bottom:10px;"></div>
+          <table>
+            <thead>
+              <tr><th>Draft ID</th><th>Direction</th><th>Thresholds</th><th>Backtest Delta</th><th>Floor OK</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody id="rules-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Fact-Checked Report Drafts (`publish_report` requires `domain_expert`)</h2>
+          <table>
+            <thead>
+              <tr><th>Report ID</th><th>Title</th><th>Fact-Check</th><th>Rounds</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody id="reports-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Deduplicated Operational Tickets</h2>
+          <table>
+            <thead>
+              <tr><th>Ticket ID</th><th>Event ID</th><th>Category</th><th>Severity</th><th>Title</th><th>Catalog</th><th>Status</th></tr>
+            </thead>
+            <tbody id="tickets-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 3: Event Triggers & Memory -->
+      <div id="tab-triggers" class="tab-pane" style="display:none;">
+        <div class="card">
+          <h2>
+            <span>Event Trigger Bus (Cron / Webhook -> Dedup -> Wake Agent)</span>
+            <button onclick="emitTrigger()">⚡ Emit Sample Anomaly Trigger (`EVT-20261031-01`)</button>
+          </h2>
+          <p style="font-size:0.82rem;color:var(--muted);margin-top:0;">
+            Emitting the same `event_id` a second time demonstrates automatic deduplication (agent is not re-run and duplicate tickets are prevented).
+          </p>
+          <table>
+            <thead>
+              <tr><th>Event ID</th><th>Kind</th><th>Source</th><th>Target Agent</th><th>Deduplicated</th><th>Ticket / Intent</th><th>Summary</th></tr>
+            </thead>
+            <tbody id="triggers-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Long-Term Expert Memory (`ExpertMemoryStore`)</h2>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Pattern Key</th><th>Verdict</th><th>Rationale</th><th>Recorded By</th></tr>
+            </thead>
+            <tbody id="memory-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 4: Audit Log -->
+      <div id="tab-audit" class="tab-pane" style="display:none;">
+        <div class="card">
+          <h2>Immutable PolicyGate Audit Log</h2>
+          <table>
+            <thead>
+              <tr><th>Audit ID</th><th>Time</th><th>Principal</th><th>Action</th><th>Domain</th><th>Effect</th><th>Basis</th><th>Reason</th></tr>
+            </thead>
+            <tbody id="audit-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentState = null;
+    let selectedAgent = 'query';
+
+    function switchTab(tab, btn) {
+      document.querySelectorAll('.tab-pane').forEach(el => el.style.display = 'none');
+      document.getElementById('tab-' + tab).style.display = 'block';
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function selectAgent(agentId) {
+      selectedAgent = agentId;
+      document.getElementById('selected-agent-label').textContent = agentId;
+      document.querySelectorAll('.agent-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.agent === agentId);
+      });
+    }
+
+    function fillPrompt(agentId, text) {
+      selectAgent(agentId);
+      document.getElementById('prompt-input').value = text;
+    }
+
+    async function reloadDashboard() {
+      const sel = document.getElementById('scope-select');
+      const scopeId = sel.value || 'prod-cluster-01';
+      const [healthRes, lpRes] = await Promise.all([
+        fetch('/api/v1/health').then(r => r.json()),
+        fetch(`/api/v1/launchpad?scope_id=${encodeURIComponent(scopeId)}`).then(r => r.json())
+      ]);
+      const h = healthRes.data;
+      const d = lpRes.data;
+      currentState = d;
+
+      document.getElementById('domain-badge').textContent = `domain: ${d.domain}`;
+      const ompBadge = document.getElementById('omp-badge');
+      ompBadge.textContent = `omp: ${h.omp.status} (${h.omp.version})`;
+      ompBadge.className = 'badge ' + (h.omp.status === 'ok' ? 'ok' : 'warn');
+      document.getElementById('mode-badge').textContent = `llm: ${h.llm_mode}`;
+
+      const autoBtn = document.getElementById('auto-btn');
+      autoBtn.textContent = `Autonomous Catalog: ${d.autonomous_enabled ? 'ON' : 'OFF'}`;
+      autoBtn.className = d.autonomous_enabled ? 'success' : 'secondary';
+
+      if (!sel.options.length) {
+        d.scopes.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.scope_id;
+          opt.textContent = `${s.scope_id} — ${s.name}`;
+          sel.appendChild(opt);
+        });
+        sel.value = scopeId;
+      }
+
+      // Render KPIs
+      const sc = d.scope;
+      document.getElementById('scope-status-badge').textContent = sc.overall_status;
+      const kpis = [
+        { label: 'CPU Load Ratio', val: sc.metrics.cpu_load_ratio },
+        { label: 'P99 Latency', val: sc.metrics.p99_latency_ms + ' ms' },
+        { label: 'Availability SLA', val: (sc.availability_sla * 100).toFixed(2) + '%' },
+        { label: '5xx Error Rate', val: (sc.metrics.error_rate_5xx * 100).toFixed(2) + '%' },
+      ];
+      document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
+        `<div class="kpi"><div class="label">${k.label}</div><div class="val">${k.val}</div></div>`
+      ).join('');
+
+      document.getElementById('nodes-tbody').innerHTML = sc.nodes.map(n =>
+        `<tr>
+          <td><span class="light-dot light-${n.light}"></span><code>${n.node_id}</code></td>
+          <td>${n.load_ratio}</td>
+          <td>${n.link_status}</td>
+          <td><code>${n.sensor_trust}</code></td>
+        </tr>`
+      ).join('');
+
+      // Render Agents
+      document.getElementById('agent-list').innerHTML = d.agents.map(a =>
+        `<div class="agent-item ${a.agent_id === selectedAgent ? 'active' : ''}" data-agent="${a.agent_id}" onclick="selectAgent('${a.agent_id}')">
+          <div class="title"><span>${a.label} (<code>${a.agent_id}</code>)</span><span class="badge">${a.domain}</span></div>
+          <div class="desc">${a.description}</div>
+          <div class="tool-tags">${a.tools.map(t => `<span class="tool-tag">${t}</span>`).join('')}</div>
+        </div>`
+      ).join('');
+
+      // Render Intents
+      document.getElementById('intents-tbody').innerHTML = d.intents.length ? d.intents.map(i =>
+        `<tr>
+          <td><code>${i.intent_id}</code></td>
+          <td><code>${i.kind}</code></td>
+          <td><code>${i.target}</code></td>
+          <td><code>${i.trigger_event}</code></td>
+          <td><code>${i.catalog_ref || '-'}</code></td>
+          <td><span class="badge ${i.status.includes('executed') ? 'ok' : 'warn'}">${i.status}</span></td>
+          <td>${i.status === 'pending_approval' ?
+            `<button class="success" style="padding:3px 8px;font-size:0.75rem;" onclick="reviewIntent('${i.intent_id}', true)">Approve</button>
+             <button class="danger" style="padding:3px 8px;font-size:0.75rem;" onclick="reviewIntent('${i.intent_id}', false)">Reject</button>`
+            : (i.reviewed_by || '-')}</td>
+        </tr>`
+      ).join('') : '<tr><td colspan="7" style="color:var(--muted);">No intents proposed yet. Run the `ops` agent!</td></tr>';
+
+      // Render Rules
+      const ar = d.active_rule;
+      document.getElementById('active-rule-box').innerHTML =
+        `Active Rule v${ar.version}: Yellow=<code>${ar.thresholds.yellow}</code>, Orange=<code>${ar.thresholds.orange}</code>, Red=<code>${ar.thresholds.red}</code> | Safety Floor: Yellow≤<code>${ar.safety_floor.yellow}</code>, Orange≤<code>${ar.safety_floor.orange}</code>, Red≤<code>${ar.safety_floor.red}</code>`;
+
+      document.getElementById('rules-tbody').innerHTML = d.rule_drafts.length ? d.rule_drafts.map(r =>
+        `<tr>
+          <td><code>${r.draft_id}</code></td>
+          <td>${r.direction}</td>
+          <td><code>${r.candidate_thresholds.yellow} / ${r.candidate_thresholds.orange} / ${r.candidate_thresholds.red}</code></td>
+          <td>${r.simulation ? `${r.simulation.current_alerts_triggered} → ${r.simulation.candidate_alerts_triggered} (${r.simulation.delta_alerts >= 0 ? '+' : ''}${r.simulation.delta_alerts})` : '-'}</td>
+          <td>${r.simulation && !r.simulation.violates_safety_floor ? '✅ Yes' : '❌ Violated'}</td>
+          <td><span class="badge ${r.status === 'signed_active' ? 'ok' : 'warn'}">${r.status}</span></td>
+          <td>${r.status === 'draft' ? `<button class="success" style="padding:3px 8px;font-size:0.75rem;" onclick="signRule('${r.draft_id}')">Sign & Activate</button>` : (r.signed_by || '-')}</td>
+        </tr>`
+      ).join('') : '<tr><td colspan="7" style="color:var(--muted);">No rule drafts yet. Run the `rulecard` agent!</td></tr>';
+
+      // Render Reports
+      document.getElementById('reports-tbody').innerHTML = d.reports.length ? d.reports.map(r =>
+        `<tr>
+          <td><code>${r.report_id}</code></td>
+          <td>${r.title}</td>
+          <td>${r.passed_factcheck ? '✅ Verified (3/3)' : '❌ Failed'}</td>
+          <td>${r.rounds_used}</td>
+          <td><span class="badge ${r.status === 'published' ? 'ok' : 'warn'}">${r.status}</span></td>
+          <td>${r.status === 'draft_verified' ? `<button class="success" style="padding:3px 8px;font-size:0.75rem;" onclick="publishReport('${r.report_id}')">Publish</button>` : (r.published_by || '-')}</td>
+        </tr>`
+      ).join('') : '<tr><td colspan="6" style="color:var(--muted);">No report drafts yet. Run the `report` agent!</td></tr>';
+
+      // Render Tickets
+      document.getElementById('tickets-tbody').innerHTML = d.tickets.length ? d.tickets.map(t =>
+        `<tr>
+          <td><code>${t.ticket_id}</code></td>
+          <td><code>${t.event_id}</code></td>
+          <td>${t.category}</td>
+          <td>${t.severity}</td>
+          <td>${t.title}</td>
+          <td><code>${t.catalog_ref || '-'}</code></td>
+          <td><span class="badge ok">${t.status}</span></td>
+        </tr>`
+      ).join('') : '<tr><td colspan="7" style="color:var(--muted);">No tickets yet.</td></tr>';
+
+      // Render Triggers
+      document.getElementById('triggers-tbody').innerHTML = d.triggers.length ? d.triggers.map(t =>
+        `<tr>
+          <td><code>${t.event_id}</code></td>
+          <td><code>${t.event_kind}</code></td>
+          <td>${t.source}</td>
+          <td><code>${t.target_Agent}</code></td>
+          <td>${t.deduplicated ? '⚠️ Yes (Skipped)' : 'No (Ran Agent)'}</td>
+          <td><code>${t.ticket_id || '-'}</code> / <code>${t.intent_id || '-'}</code></td>
+          <td style="max-width:320px;font-size:0.75rem;">${(t.agent_summary || '').slice(0, 140)}</td>
+        </tr>`
+      ).join('') : '<tr><td colspan="7" style="color:var(--muted);">No trigger events emitted yet.</td></tr>';
+
+      // Render Memory
+      document.getElementById('memory-tbody').innerHTML = d.memory.map(m =>
+        `<tr>
+          <td><code>${m.criterion_id}</code></td>
+          <td><code>${m.pattern_key}</code></td>
+          <td><span class="badge ok">${m.verdict}</span></td>
+          <td>${m.rationale}</td>
+          <td><code>${m.recorded_by_agent}</code> (${m.approved_by_role})</td>
+        </tr>`
+      ).join('');
+
+      // Render Audit
+      document.getElementById('audit-tbody').innerHTML = d.audit.map(a =>
+        `<tr>
+          <td><code>${a.audit_id}</code></td>
+          <td style="font-size:0.74rem;color:var(--muted);">${a.timestamp.slice(11, 19)}</td>
+          <td><code>${a.principal_kind}:${a.principal_id}</code></td>
+          <td><code>${a.action_kind}:${a.action_name}</code></td>
+          <td>${a.domain}</td>
+          <td><span class="badge ${a.effect === 'allow' ? 'ok' : 'warn'}">${a.effect}</span></td>
+          <td><code>${a.basis}</code></td>
+          <td style="font-size:0.76rem;">${a.reason}</td>
+        </tr>`
+      ).join('');
+    }
+
+    async function runAgent() {
+      const btn = document.getElementById('run-btn');
+      const prompt = document.getElementById('prompt-input').value;
+      const scopeId = document.getElementById('scope-select').value || 'prod-cluster-01';
+      const readOnly = document.getElementById('readonly-chk').checked;
+      btn.disabled = true;
+      btn.textContent = '⏳ Running omp RPC...';
+      document.getElementById('agent-answer').textContent = 'Spawning sandboxed omp RPC session and executing Host Tools...';
+
+      try {
+        const res = await fetch(`/api/v1/agents/${encodeURIComponent(selectedAgent)}/ask`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, scope_id: scopeId, read_only: readOnly })
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          document.getElementById('agent-answer').textContent = `Blocked / Error (${res.status}): ${body.error || JSON.stringify(body)}`;
+          document.getElementById('tool-trace-tbody').innerHTML = '';
+        } else {
+          const ans = body.data;
+          const cites = (ans.citations || []).map(c => `[Citation] ${c.tool} -> ${c.json_path} (${c.source ? c.source.layer : ''})`).join('\n');
+          document.getElementById('agent-answer').textContent =
+            `${ans.answer}\n\n--- Provenance & Execution Metadata ---\n` +
+            `Run ID: ${ans.run_id} | Agent: ${ans.agent_id} | Scope: ${ans.scope_id} | Mode: ${ans.mode} | Status: ${ans.status} (${ans.duration_s}s)\n` +
+            (cites ? cites : '');
+
+          document.getElementById('tool-trace-tbody').innerHTML = (ans.tool_calls || []).map(tc =>
+            `<tr>
+              <td>${tc.seq}</td>
+              <td><code>${tc.tool}</code></td>
+              <td>${tc.domain}</td>
+              <td><span class="badge ${tc.effect === 'allow' ? 'ok' : 'warn'}">${tc.effect}</span></td>
+              <td>${tc.ok ? '✅' : '❌'}</td>
+              <td>${tc.duration_s}s</td>
+              <td style="font-family:var(--mono);font-size:0.74rem;max-width:420px;overflow:hidden;text-overflow:ellipsis;">
+                ${tc.ok ? JSON.stringify(tc.result).slice(0, 160) : (tc.error || '')}
+              </td>
+            </tr>`
+          ).join('');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '▶ Run via OMP RPC';
+        await reloadDashboard();
+      }
+    }
+
+    async function reviewIntent(intentId, approve) {
+      await fetch(`/api/v1/intents/${encodeURIComponent(intentId)}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approve, user_id: 'alice-ops', role: 'ops_lead' })
+      });
+      await reloadDashboard();
+    }
+
+    async function signRule(draftId) {
+      await fetch(`/api/v1/rules/${encodeURIComponent(draftId)}/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 'dr-chen', role: 'domain_expert' })
+      });
+      await reloadDashboard();
+    }
+
+    async function publishReport(reportId) {
+      await fetch(`/api/v1/reports/${encodeURIComponent(reportId)}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: 'dr-chen', role: 'domain_expert' })
+      });
+      await reloadDashboard();
+    }
+
+    async function toggleAutonomous() {
+      const next = !(currentState && currentState.autonomous_enabled);
+      await fetch('/api/v1/control/autonomous', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next, user_id: 'alice-ops', role: 'ops_lead' })
+      });
+      await reloadDashboard();
+    }
+
+    async function emitTrigger() {
+      const scopeId = document.getElementById('scope-select').value || 'prod-cluster-01';
+      await fetch('/api/v1/triggers/emit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: 'EVT-20261031-01',
+          scope_id: scopeId,
+          source: 'gateway-probe-cron',
+          event_kind: 'link_packet_loss',
+          target_agent: 'ops',
+          severity: 'warning',
+          payload: { node_id: 'node-api-01', loss_pct: 100.0 }
+        })
+      });
+      await reloadDashboard();
+    }
+
+    reloadDashboard();
+  </script>
+</body>
+</html>

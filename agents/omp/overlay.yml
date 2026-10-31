@@ -1,0 +1,29 @@
+# omp --config overlay shared across all agents in OmpAgentFramework.
+tools:
+  intentTracing: false
+
+providers:
+  cacheWarming: "off"
+
+retry:
+  enabled: false
+  modelFallback: false
+
+disabledProviders:
+  - agents-md
+  - claude-md
+  - agents
+  - native
+  - github
+  - cursor
+  - vscode
+  - mcp-json
+  - claude
+  - windsurf
+  - cline
+  - claude-plugins
+  - omp-plugins
+  - agent-plugins
+  - ollama
+  - llama.cpp
+  - lm-studio

@@ -1,0 +1,14 @@
+# omp model provider template. Rendered into var/omp-home/agent/models.yml at startup.
+providers:
+  omp:
+    baseUrl: "${OMP_LLM_BASE_URL}"
+    apiKey: omp-dummy-key
+    api: openai-completions
+    models:
+      - id: omp-offline
+        name: OMP Framework Local/Offline Router
+        reasoning: false
+        input: [text]
+        contextWindow: 32000
+        maxTokens: 4096
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
